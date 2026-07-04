@@ -402,13 +402,13 @@ if app_mode == "Keyword Research":
             # Content Ideas from Keywords
             st.markdown("---")
             st.subheader("AI Content Ideas")
-            if st.button("Generate Content Ideas", type="primary", key="kw_ideas_magic"):
+            if st.button("Generate Content Ideas", type="primary", key="kw_ideas_btn_magic"):
                 with st.spinner("Generating content ideas from keywords..."):
                     existing = [k.get("keyword", "") for k in all_kws[:10]]
                     ideas = get_content_ideas(user_api_key, f"Seed keyword: {seed}", existing)
-                    st.session_state.kw_ideas_magic = ideas
-            if "kw_ideas_magic" in st.session_state:
-                st.markdown(st.session_state.kw_ideas_magic)
+                    st.session_state.kw_ideas_magic_result = ideas
+            if "kw_ideas_magic_result" in st.session_state:
+                st.markdown(st.session_state.kw_ideas_magic_result)
 
     else:
         # URL Analysis mode (existing code)
