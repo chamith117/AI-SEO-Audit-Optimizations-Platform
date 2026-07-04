@@ -38,6 +38,9 @@ from ai_seo_audit.ai_engine import (
     get_competitor_keyword_analysis,
     get_fix_guide_for_issue,
     generate_full_fix_plan,
+    generate_meta_descriptions,
+    generate_title_suggestions_for_page,
+    generate_h1_suggestions_for_page,
 )
 
 # Page configurations
@@ -757,6 +760,7 @@ if st.session_state.report:
     # 3. CONTENT SEO TAB
     with tab_content:
         st.subheader("On-Page Optimization Checks")
+        st.caption("Issues with auto-generated fix recommendations. Click to expand and see suggested titles, meta descriptions, and H1 tags.")
         
         content_issues = []
         for p in report.pages:
@@ -765,15 +769,106 @@ if st.session_state.report:
                     content_issues.append(issue)
         
         if not content_issues:
-            st.success("✓ On-page meta tags and header structures look good!")
+            st.success("On-page meta tags and header structures look good!")
         else:
+            # Group by page URL for cleaner display
+            pages_with_issues = {}
             for issue in content_issues:
-                with st.expander(f"[{issue.severity}] {issue.issue_type} - {issue.url}"):
-                    st.write(f"**Description:** {issue.description}")
-                    if issue.html_snippet:
-                        st.code(issue.html_snippet, language="html")
-                    if issue.css_selector: st.caption(f"CSS Selector: {issue.css_selector}")
-                    st.info(f"**Recommendation:** {issue.recommendation}")
+                if issue.url not in pages_with_issues:
+                    pages_with_issues[issue.url] = []
+                pages_with_issues[issue.url].append(issue)
+
+            for page_url, page_issues in pages_with_issues.items():
+                # Get page metadata
+                page_obj = next((p for p in report.pages if p.url == page_url), None)
+                if not page_obj:
+                    continue
+
+                meta = page_obj.metadata
+                h1_texts = [h.text for h in meta.headings if h.level == 1]
+                all_headings = [h.text for h in meta.headings]
+
+                with st.expander(f"**{page_url}** — {len(page_issues)} issue(s)", expanded=True):
+                    for issue in page_issues:
+                        sev_color = "red" if issue.severity == "CRITICAL" else "orange"
+                        st.markdown(f"**:{sev_color}[{issue.severity}]** {issue.issue_type}")
+                        st.write(issue.description)
+                        if issue.html_snippet:
+                            st.code(issue.html_snippet, language="html")
+
+                    st.markdown("---")
+
+                    # Auto-generate recommendations
+                    st.markdown("**Recommended Fixes:**")
+
+                    # Generate meta descriptions if needed
+                    meta_issues = [i for i in page_issues if "Meta Description" in i.issue_type]
+                    if meta_issues:
+                        if st.button(f"Generate Meta Descriptions", key=f"gen_meta_{page_url}"):
+                            with st.spinner("Generating optimized meta descriptions..."):
+                                meta_suggestions = generate_meta_descriptions(
+                                    user_api_key,
+                                    page_url,
+                                    meta.title or "",
+                                    all_headings,
+                                    meta.meta_description
+                                )
+                                st.session_state[f"meta_sugg_{page_url}"] = meta_suggestions
+
+                        if f"meta_sugg_{page_url}" in st.session_state:
+                            st.success("**Suggested Meta Descriptions (120-155 chars):**")
+                            st.markdown(st.session_state[f"meta_sugg_{page_url}"])
+
+                    # Generate title suggestions if needed
+                    title_issues = [i for i in page_issues if "Title" in i.issue_type]
+                    if title_issues:
+                        if st.button(f"Generate Title Tags", key=f"gen_title_{page_url}"):
+                            with st.spinner("Generating optimized titles..."):
+                                title_suggestions = generate_title_suggestions_for_page(
+                                    user_api_key,
+                                    page_url,
+                                    meta.title or "",
+                                    all_headings
+                                )
+                                st.session_state[f"title_sugg_{page_url}"] = title_suggestions
+
+                        if f"title_sugg_{page_url}" in st.session_state:
+                            st.success("**Suggested Title Tags (30-60 chars):**")
+                            st.markdown(st.session_state[f"title_sugg_{page_url}"])
+
+                    # Generate H1 suggestions if needed
+                    h1_issues = [i for i in page_issues if "H1" in i.issue_type]
+                    if h1_issues:
+                        if st.button(f"Generate H1 Headings", key=f"gen_h1_{page_url}"):
+                            with st.spinner("Generating optimized H1 tags..."):
+                                h1_suggestions = generate_h1_suggestions_for_page(
+                                    user_api_key,
+                                    page_url,
+                                    meta.title or "",
+                                    h1_texts
+                                )
+                                st.session_state[f"h1_sugg_{page_url}"] = h1_suggestions
+
+                        if f"h1_sugg_{page_url}" in st.session_state:
+                            st.success("**Suggested H1 Headings:**")
+                            st.markdown(st.session_state[f"h1_sugg_{page_url}"])
+
+                    # Show current values
+                    st.markdown("**Current Values:**")
+                    curr_data = []
+                    if meta.title:
+                        curr_data.append({"Tag": "Title", "Value": meta.title, "Length": len(meta.title)})
+                    else:
+                        curr_data.append({"Tag": "Title", "Value": "MISSING", "Length": 0})
+                    if meta.meta_description:
+                        curr_data.append({"Tag": "Meta Description", "Value": meta.meta_description[:80] + "...", "Length": len(meta.meta_description)})
+                    else:
+                        curr_data.append({"Tag": "Meta Description", "Value": "MISSING", "Length": 0})
+                    if h1_texts:
+                        curr_data.append({"Tag": "H1", "Value": h1_texts[0], "Length": len(h1_texts[0])})
+                    else:
+                        curr_data.append({"Tag": "H1", "Value": "MISSING", "Length": 0})
+                    st.dataframe(pd.DataFrame(curr_data), use_container_width=True, hide_index=True)
 
     # 4. IMAGES TAB
     with tab_images:

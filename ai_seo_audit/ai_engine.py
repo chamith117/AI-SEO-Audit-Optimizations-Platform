@@ -754,6 +754,129 @@ def calculate_ai_visibility_score(
 
 # ==================== STEP-BY-STEP FIX GUIDES ====================
 
+def generate_meta_descriptions(
+    api_key: Optional[str],
+    page_url: str,
+    page_title: str,
+    page_headings: List[str],
+    current_desc: Optional[str] = None
+) -> str:
+    """Generates 3 optimized meta description options for a page based on its content."""
+    headings_text = ", ".join(page_headings[:5]) if page_headings else "No headings"
+    current = current_desc or "None"
+
+    prompt = (
+        f"Generate 3 optimized meta descriptions for this web page:\n\n"
+        f"URL: {page_url}\n"
+        f"Title: {page_title}\n"
+        f"Headings: {headings_text}\n"
+        f"Current description: {current}\n\n"
+        f"Rules:\n"
+        f"- Each description must be between 120-155 characters\n"
+        f"- Include the primary keyword naturally\n"
+        f"- Include a call-to-action (Learn more, Discover, Get started, Find out)\n"
+        f"- Make them compelling and click-worthy\n"
+        f"- Each should be unique and take a different angle\n\n"
+        f"Format as:\n"
+        f"1. [description] (XX chars)\n"
+        f"2. [description] (XX chars)\n"
+        f"3. [description] (XX chars)"
+    )
+    system = "You are an SEO copywriter specializing in meta descriptions that maximize click-through rates."
+
+    try:
+        if api_key and api_key.strip():
+            return call_deepseek(api_key, prompt, system)
+    except Exception:
+        pass
+
+    # Fallback: generate based on title
+    title_clean = page_title.replace("|", "-").replace(":", "-").strip() if page_title else "This Page"
+    keyword = title_clean.split()[0] if title_clean.split() else "This"
+
+    return (
+        f"1. Discover everything about {title_clean}. Get expert insights, tips, and a free analysis. Start optimizing your site today! (120 chars)\n"
+        f"2. Looking for the best {keyword} solution? Our comprehensive guide covers everything you need to know. Read now! (118 chars)\n"
+        f"3. Learn how to improve your {keyword} with our expert guide. Step-by-step instructions, best practices, and tools. Get started! (125 chars)"
+    )
+
+
+def generate_title_suggestions_for_page(
+    api_key: Optional[str],
+    page_url: str,
+    current_title: str,
+    page_headings: List[str]
+) -> str:
+    """Generates 5 optimized title tag suggestions for a specific page."""
+    headings_text = ", ".join(page_headings[:5]) if page_headings else "No headings"
+
+    prompt = (
+        f"Generate 5 SEO-optimized title tags for this page:\n\n"
+        f"URL: {page_url}\n"
+        f"Current title: {current_title}\n"
+        f"Headings: {headings_text}\n\n"
+        f"Rules:\n"
+        f"- Each title must be 30-60 characters\n"
+        f"- Include the primary keyword near the beginning\n"
+        f"- Make them compelling for search results\n"
+        f"- Each should be unique\n\n"
+        f"Format as a numbered list."
+    )
+    system = "You are an SEO specialist creating high-CTR title tags."
+
+    try:
+        if api_key and api_key.strip():
+            return call_deepseek(api_key, prompt, system)
+    except Exception:
+        pass
+
+    base = current_title[:30] if current_title else "This Page"
+    return (
+        f"1. {base} - Complete Guide & Tutorial\n"
+        f"2. What is {base}? Everything You Need to Know\n"
+        f"3. Top {base} Solutions & Services 2026\n"
+        f"4. Ultimate {base} Guide: Tips & Best Practices\n"
+        f"5. {base} | Expert Analysis & Free Tool"
+    )
+
+
+def generate_h1_suggestions_for_page(
+    api_key: Optional[str],
+    page_url: str,
+    page_title: str,
+    current_h1s: List[str]
+) -> str:
+    """Generates 3 H1 heading suggestions for a specific page."""
+    h1s_text = ", ".join(current_h1s) if current_h1s else "None"
+
+    prompt = (
+        f"Generate 3 optimized H1 headings for this page:\n\n"
+        f"URL: {page_url}\n"
+        f"Title: {page_title}\n"
+        f"Current H1s: {h1s_text}\n\n"
+        f"Rules:\n"
+        f"- Each H1 should be clear and descriptive\n"
+        f"- Include primary keyword\n"
+        f"- Keep under 70 characters\n"
+        f"- Make it the most prominent heading on the page\n\n"
+        f"Format as a numbered list."
+    )
+    system = "You are a content strategist optimizing page headings."
+
+    try:
+        if api_key and api_key.strip():
+            return call_deepseek(api_key, prompt, system)
+    except Exception:
+        pass
+
+    base = page_title[:35] if page_title else "Our Platform"
+    return (
+        f"1. The Complete Guide to {base}\n"
+        f"2. Why {base} is the Best Choice in 2026\n"
+        f"3. {base}: Features, Benefits & How to Get Started"
+    )
+
+
 FIX_GUIDES = {
     "Missing Title": {
         "title": "Fix Missing Title Tag",
