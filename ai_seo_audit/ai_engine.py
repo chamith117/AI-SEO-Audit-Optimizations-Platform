@@ -1202,3 +1202,281 @@ def generate_full_fix_plan(api_key: Optional[str], issues: list) -> str:
     result += "4. **Monitor Google Search Console** - Track improvements over time\n"
 
     return result
+
+
+# ==================== STRUCTURED DATA GENERATORS ====================
+
+def generate_breadcrumb_schema(site_name: str, page_url: str, breadcrumbs: list) -> str:
+    """Generates BreadcrumbList JSON-LD structured data.
+
+    Args:
+        site_name: Name of the website
+        page_url: Full URL of the current page
+        breadcrumbs: List of dicts with 'name' and 'url' keys
+    """
+    import json
+
+    items = []
+    for i, bc in enumerate(breadcrumbs):
+        item = {
+            "@type": "ListItem",
+            "position": i + 1,
+            "name": bc["name"],
+        }
+        if bc.get("url"):
+            item["item"] = bc["url"]
+        items.append(item)
+
+    schema = {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": items
+    }
+
+    return json.dumps(schema, indent=2)
+
+
+def generate_organization_schema(
+    name: str,
+    url: str,
+    logo: str = "",
+    description: str = "",
+    phone: str = "",
+    email: str = "",
+    address: str = "",
+    social_links: list = None
+) -> str:
+    """Generates Organization JSON-LD structured data."""
+    import json
+
+    schema = {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": name,
+        "url": url,
+    }
+
+    if logo:
+        schema["logo"] = logo
+    if description:
+        schema["description"] = description
+    if phone:
+        schema["telephone"] = phone
+    if email:
+        schema["email"] = email
+    if address:
+        schema["address"] = {
+            "@type": "PostalAddress",
+            "streetAddress": address,
+        }
+    if social_links:
+        schema["sameAs"] = social_links
+
+    return json.dumps(schema, indent=2)
+
+
+def generate_faq_schema(faqs: list) -> str:
+    """Generates FAQPage JSON-LD structured data.
+
+    Args:
+        faqs: List of dicts with 'question' and 'answer' keys
+    """
+    import json
+
+    entities = []
+    for faq in faqs:
+        entities.append({
+            "@type": "Question",
+            "name": faq["question"],
+            "acceptedAnswer": {
+                "@type": "Answer",
+                "text": faq["answer"]
+            }
+        })
+
+    schema = {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": entities
+    }
+
+    return json.dumps(schema, indent=2)
+
+
+def generate_article_schema(
+    headline: str,
+    url: str,
+    date_published: str = "",
+    date_modified: str = "",
+    author_name: str = "",
+    author_url: str = "",
+    image: str = "",
+    description: str = "",
+    publisher_name: str = "",
+    publisher_logo: str = ""
+) -> str:
+    """Generates Article JSON-LD structured data."""
+    import json
+
+    schema = {
+        "@context": "https://schema.org",
+        "@type": "Article",
+        "headline": headline,
+        "url": url,
+    }
+
+    if date_published:
+        schema["datePublished"] = date_published
+    if date_modified:
+        schema["dateModified"] = date_modified
+    if description:
+        schema["description"] = description
+    if image:
+        schema["image"] = image
+
+    if author_name:
+        author = {"@type": "Person", "name": author_name}
+        if author_url:
+            author["url"] = author_url
+        schema["author"] = author
+
+    if publisher_name:
+        publisher = {"@type": "Organization", "name": publisher_name}
+        if publisher_logo:
+            publisher["logo"] = {"@type": "ImageObject", "url": publisher_logo}
+        schema["publisher"] = publisher
+
+    return json.dumps(schema, indent=2)
+
+
+def generate_webpage_schema(
+    title: str,
+    url: str,
+    description: str = "",
+    language: str = "en"
+) -> str:
+    """Generates WebPage JSON-LD structured data."""
+    import json
+
+    schema = {
+        "@context": "https://schema.org",
+        "@type": "WebPage",
+        "name": title,
+        "url": url,
+        "inLanguage": language,
+    }
+
+    if description:
+        schema["description"] = description
+
+    return json.dumps(schema, indent=2)
+
+
+def generate_local_business_schema(
+    name: str,
+    url: str,
+    phone: str = "",
+    address: str = "",
+    city: str = "",
+    state: str = "",
+    zip_code: str = "",
+    country: str = "US",
+    latitude: float = 0,
+    longitude: float = 0,
+    opening_hours: str = "",
+    price_range: str = "$$"
+) -> str:
+    """Generates LocalBusiness JSON-LD structured data."""
+    import json
+
+    schema = {
+        "@context": "https://schema.org",
+        "@type": "LocalBusiness",
+        "name": name,
+        "url": url,
+    }
+
+    if phone:
+        schema["telephone"] = phone
+    if price_range:
+        schema["priceRange"] = price_range
+
+    if address:
+        addr = {"@type": "PostalAddress", "streetAddress": address}
+        if city: addr["addressLocality"] = city
+        if state: addr["addressRegion"] = state
+        if zip_code: addr["postalCode"] = zip_code
+        if country: addr["addressCountry"] = country
+        schema["address"] = addr
+
+    if latitude and longitude:
+        schema["geo"] = {
+            "@type": "GeoCoordinates",
+            "latitude": latitude,
+            "longitude": longitude
+        }
+
+    if opening_hours:
+        schema["openingHours"] = opening_hours
+
+    return json.dumps(schema, indent=2)
+
+
+def generate_product_schema(
+    name: str,
+    url: str,
+    description: str = "",
+    image: str = "",
+    price: str = "",
+    currency: str = "USD",
+    availability: str = "InStock",
+    brand: str = ""
+) -> str:
+    """Generates Product JSON-LD structured data."""
+    import json
+
+    schema = {
+        "@context": "https://schema.org",
+        "@type": "Product",
+        "name": name,
+        "url": url,
+    }
+
+    if description:
+        schema["description"] = description
+    if image:
+        schema["image"] = image
+    if brand:
+        schema["brand"] = {"@type": "Brand", "name": brand}
+
+    if price:
+        schema["offers"] = {
+            "@type": "Offer",
+            "price": price,
+            "priceCurrency": currency,
+            "availability": f"https://schema.org/{availability}"
+        }
+
+    return json.dumps(schema, indent=2)
+
+
+def generate_website_search_schema(site_url: str, site_name: str) -> str:
+    """Generates WebSite search action schema for sitelinks search box."""
+    import json
+
+    schema = {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": site_name,
+        "url": site_url,
+        "potentialAction": {
+            "@type": "SearchAction",
+            "target": {
+                "@type": "EntryPoint",
+                "urlTemplate": site_url.rstrip("/") + "/search?q={search_term_string}"
+            },
+            "query-input": "required name=search_term_string"
+        }
+    }
+
+    return json.dumps(schema, indent=2)

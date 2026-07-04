@@ -42,6 +42,14 @@ from ai_seo_audit.ai_engine import (
     generate_meta_descriptions,
     generate_title_suggestions_for_page,
     generate_h1_suggestions_for_page,
+    generate_breadcrumb_schema,
+    generate_organization_schema,
+    generate_faq_schema,
+    generate_article_schema,
+    generate_webpage_schema,
+    generate_local_business_schema,
+    generate_product_schema,
+    generate_website_search_schema,
 )
 
 # Page configurations
@@ -939,23 +947,240 @@ if st.session_state.report:
 
     # 7. STRUCTURED DATA TAB
     with tab_data:
-        st.subheader("Schema.org JSON-LD Validations")
-        
-        schema_issues = []
-        for p in report.pages:
-            for issue in p.issues:
-                if issue.issue_type == "Invalid JSON-LD":
-                    schema_issues.append(issue)
+        st.subheader("Schema.org JSON-LD")
 
-        if not schema_issues:
-            st.success("✓ Detected Schema JSON-LD blocks are structured correctly!")
-        else:
-            for issue in schema_issues:
-                with st.expander(f"[{issue.severity}] {issue.issue_type} - {issue.url}"):
-                    st.write(f"**Description:** {issue.description}")
-                    if issue.html_snippet:
-                        st.code(issue.html_snippet, language="json")
-                    st.info(f"**Recommendation:** {issue.recommendation}")
+        # Sub-tabs for validations and generators
+        sd_tab1, sd_tab2 = st.tabs(["Validations", "Generate Schema"])
+
+        with sd_tab1:
+            st.subheader("Schema Validations")
+            schema_issues = []
+            for p in report.pages:
+                for issue in p.issues:
+                    if issue.issue_type == "Invalid JSON-LD":
+                        schema_issues.append(issue)
+
+            if not schema_issues:
+                st.success("Detected Schema JSON-LD blocks are structured correctly!")
+            else:
+                for issue in schema_issues:
+                    with st.expander(f"[{issue.severity}] {issue.issue_type} - {issue.url}"):
+                        st.write(f"**Description:** {issue.description}")
+                        if issue.html_snippet:
+                            st.code(issue.html_snippet, language="json")
+                        st.info(f"**Recommendation:** {issue.recommendation}")
+
+        with sd_tab2:
+            st.subheader("Structured Data Generator")
+            st.caption("Generate ready-to-use JSON-LD code. Copy and paste into your HTML <head> section.")
+
+            schema_type = st.selectbox(
+                "Select Schema Type:",
+                options=[
+                    "BreadcrumbList",
+                    "Organization",
+                    "FAQPage",
+                    "Article",
+                    "WebPage",
+                    "LocalBusiness",
+                    "Product",
+                    "Website Search Box"
+                ],
+                key="schema_type_select"
+            )
+
+            st.markdown("---")
+
+            # BreadcrumbList Generator
+            if schema_type == "BreadcrumbList":
+                st.markdown("#### BreadcrumbList Schema")
+                st.caption("Generates breadcrumb navigation schema for better search snippets.")
+
+                bc_site = st.text_input("Website Name", value="My Website", key="bc_site")
+                bc_url = st.text_input("Page URL", value=url_input, key="bc_url")
+
+                st.write("**Breadcrumb Path (add items in order from home to current page):**")
+                bc_items = []
+                bc_cols = st.columns(3)
+                for i in range(5):
+                    with bc_cols[0]:
+                        name = st.text_input(f"Level {i+1} Name", value="" if i > 0 else bc_site, key=f"bc_name_{i}")
+                    with bc_cols[1]:
+                        url_val = st.text_input(f"Level {i+1} URL", value="" if i > 0 else bc_url, key=f"bc_url_{i}")
+                    if name:
+                        bc_items.append({"name": name, "url": url_val or None})
+
+                if st.button("Generate Breadcrumb Schema", key="gen_bc"):
+                    schema = generate_breadcrumb_schema(bc_site, bc_url, bc_items)
+                    st.code(schema, language="json")
+                    st.download_button("Download Breadcrumb Schema", schema, "breadcrumb-schema.json", "application/json")
+
+            # Organization Generator
+            elif schema_type == "Organization":
+                st.markdown("#### Organization Schema")
+                st.caption("Generates organization/company information schema.")
+
+                org_name = st.text_input("Organization Name", value="My Company", key="org_name")
+                org_url = st.text_input("Website URL", value=url_input, key="org_url")
+                org_logo = st.text_input("Logo URL", placeholder="https://yoursite.com/logo.png", key="org_logo")
+                org_desc = st.text_area("Description", placeholder="Brief description of your organization", key="org_desc")
+                org_phone = st.text_input("Phone Number", placeholder="+1-555-123-4567", key="org_phone")
+                org_email = st.text_input("Email", placeholder="info@yoursite.com", key="org_email")
+                org_social = st.text_area("Social Media URLs (one per line)", placeholder="https://facebook.com/yourpage\nhttps://twitter.com/yourhandle", key="org_social")
+
+                if st.button("Generate Organization Schema", key="gen_org"):
+                    social_list = [s.strip() for s in org_social.split("\n") if s.strip()]
+                    schema = generate_organization_schema(
+                        name=org_name, url=org_url, logo=org_logo,
+                        description=org_desc, phone=org_phone, email=org_email,
+                        social_links=social_list if social_list else None
+                    )
+                    st.code(schema, language="json")
+                    st.download_button("Download Organization Schema", schema, "organization-schema.json", "application/json")
+
+            # FAQ Generator
+            elif schema_type == "FAQPage":
+                st.markdown("#### FAQPage Schema")
+                st.caption("Generates FAQ schema for rich snippets in search results.")
+
+                faq_items = []
+                for i in range(5):
+                    st.markdown(f"**FAQ {i+1}:**")
+                    q = st.text_input(f"Question {i+1}", key=f"faq_q_{i}")
+                    a = st.text_area(f"Answer {i+1}", key=f"faq_a_{i}")
+                    if q and a:
+                        faq_items.append({"question": q, "answer": a})
+
+                if st.button("Generate FAQ Schema", key="gen_faq"):
+                    if faq_items:
+                        schema = generate_faq_schema(faq_items)
+                        st.code(schema, language="json")
+                        st.download_button("Download FAQ Schema", schema, "faq-schema.json", "application/json")
+                    else:
+                        st.warning("Add at least one FAQ to generate schema.")
+
+            # Article Generator
+            elif schema_type == "Article":
+                st.markdown("#### Article Schema")
+                st.caption("Generates article schema for blog posts and news articles.")
+
+                art_headline = st.text_input("Article Headline", key="art_headline")
+                art_url = st.text_input("Article URL", value=url_input, key="art_url")
+                art_desc = st.text_area("Description", key="art_desc")
+                art_image = st.text_input("Featured Image URL", key="art_image")
+                art_author = st.text_input("Author Name", key="art_author")
+                art_author_url = st.text_input("Author URL", key="art_author_url")
+                art_pub_date = st.date_input("Published Date", key="art_pub")
+                art_mod_date = st.date_input("Modified Date", key="art_mod")
+                art_publisher = st.text_input("Publisher Name", key="art_publisher")
+                art_logo = st.text_input("Publisher Logo URL", key="art_logo")
+
+                if st.button("Generate Article Schema", key="gen_art"):
+                    schema = generate_article_schema(
+                        headline=art_headline, url=art_url, description=art_desc,
+                        image=art_image, author_name=art_author, author_url=art_author_url,
+                        date_published=str(art_pub_date), date_modified=str(art_mod_date),
+                        publisher_name=art_publisher, publisher_logo=art_logo
+                    )
+                    st.code(schema, language="json")
+                    st.download_button("Download Article Schema", schema, "article-schema.json", "application/json")
+
+            # WebPage Generator
+            elif schema_type == "WebPage":
+                st.markdown("#### WebPage Schema")
+                st.caption("Generates basic webpage schema for any page on your site.")
+
+                wp_title = st.text_input("Page Title", key="wp_title")
+                wp_url = st.text_input("Page URL", value=url_input, key="wp_url")
+                wp_desc = st.text_area("Description", key="wp_desc")
+                wp_lang = st.selectbox("Language", options=["en", "es", "fr", "de", "it", "pt", "ja", "ko", "zh", "ar", "hi", "ru"], key="wp_lang")
+
+                if st.button("Generate WebPage Schema", key="gen_wp"):
+                    schema = generate_webpage_schema(wp_title, wp_url, wp_desc, wp_lang)
+                    st.code(schema, language="json")
+                    st.download_button("Download WebPage Schema", schema, "webpage-schema.json", "application/json")
+
+            # LocalBusiness Generator
+            elif schema_type == "LocalBusiness":
+                st.markdown("#### LocalBusiness Schema")
+                st.caption("Generates local business schema for local SEO.")
+
+                lb_name = st.text_input("Business Name", key="lb_name")
+                lb_url = st.text_input("Website URL", value=url_input, key="lb_url")
+                lb_phone = st.text_input("Phone Number", key="lb_phone")
+                lb_address = st.text_input("Street Address", key="lb_address")
+                lb_cols = st.columns(3)
+                with lb_cols[0]:
+                    lb_city = st.text_input("City", key="lb_city")
+                with lb_cols[1]:
+                    lb_state = st.text_input("State", key="lb_state")
+                with lb_cols[2]:
+                    lb_zip = st.text_input("ZIP Code", key="lb_zip")
+                lb_hours = st.text_input("Opening Hours", placeholder="Mo-Fr 09:00-17:00", key="lb_hours")
+                lb_price = st.selectbox("Price Range", options=["$", "$$", "$$$", "$$$$"], key="lb_price")
+
+                if st.button("Generate LocalBusiness Schema", key="gen_lb"):
+                    schema = generate_local_business_schema(
+                        name=lb_name, url=lb_url, phone=lb_phone,
+                        address=lb_address, city=lb_city, state=lb_state,
+                        zip_code=lb_zip, opening_hours=lb_hours, price_range=lb_price
+                    )
+                    st.code(schema, language="json")
+                    st.download_button("Download LocalBusiness Schema", schema, "localbusiness-schema.json", "application/json")
+
+            # Product Generator
+            elif schema_type == "Product":
+                st.markdown("#### Product Schema")
+                st.caption("Generates product schema for e-commerce pages.")
+
+                pr_name = st.text_input("Product Name", key="pr_name")
+                pr_url = st.text_input("Product URL", value=url_input, key="pr_url")
+                pr_desc = st.text_area("Description", key="pr_desc")
+                pr_image = st.text_input("Product Image URL", key="pr_image")
+                pr_price = st.text_input("Price", key="pr_price")
+                pr_currency = st.selectbox("Currency", options=["USD", "EUR", "GBP", "CAD", "AUD", "JPY"], key="pr_currency")
+                pr_avail = st.selectbox("Availability", options=["InStock", "OutOfStock", "PreOrder", "SoldOut"], key="pr_avail")
+                pr_brand = st.text_input("Brand Name", key="pr_brand")
+
+                if st.button("Generate Product Schema", key="gen_pr"):
+                    schema = generate_product_schema(
+                        name=pr_name, url=pr_url, description=pr_desc,
+                        image=pr_image, price=pr_price, currency=pr_currency,
+                        availability=pr_avail, brand=pr_brand
+                    )
+                    st.code(schema, language="json")
+                    st.download_button("Download Product Schema", schema, "product-schema.json", "application/json")
+
+            # Website Search Box Generator
+            elif schema_type == "Website Search Box":
+                st.markdown("#### Website Search Box Schema")
+                st.caption("Adds a sitelinks search box to your Google search results.")
+
+                ws_url = st.text_input("Website URL", value=url_input, key="ws_url")
+                ws_name = st.text_input("Website Name", key="ws_name")
+
+                if st.button("Generate Search Box Schema", key="gen_ws"):
+                    schema = generate_website_search_schema(ws_url, ws_name)
+                    st.code(schema, language="json")
+                    st.download_button("Download Search Box Schema", schema, "searchbox-schema.json", "application/json")
+
+            # How to add instructions
+            st.markdown("---")
+            st.markdown("#### How to Add This to Your Website")
+            st.markdown("""
+            **HTML:** Paste the code inside `<head>` section:
+            ```html
+            <script type="application/ld+json">
+            { paste code here }
+            </script>
+            ```
+
+            **WordPress:** Use a plugin like "Insert Headers and Footers" or "Yoast SEO" > Advanced > JSON-LD
+
+            **Shopify:** Go to Online Store > Themes > Edit code > theme.liquid > paste in `<head>`
+
+            **Webflow:** Project Settings > Custom Code > Head Code > paste the script tag
+            """)
 
     # 9. ADVANCED AUDIT TAB
     with tab_advanced:
