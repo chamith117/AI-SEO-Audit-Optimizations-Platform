@@ -5,6 +5,7 @@ import csv
 import io
 import os
 import tempfile
+import time
 from urllib.parse import urlparse
 import requests
 import streamlit as st
@@ -172,7 +173,7 @@ user_api_key = st.sidebar.text_input(
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Crawl & Scan Limits")
-max_pages = st.sidebar.number_input("Max Pages", min_value=1, max_value=250, value=30)
+max_pages = st.sidebar.number_input("Max Pages", min_value=1, max_value=5000, value=30)
 max_depth = st.sidebar.number_input("Max Depth", min_value=1, max_value=10, value=3)
 check_links = st.sidebar.checkbox("Validate Broken Links", value=True)
 check_images = st.sidebar.checkbox("Validate Broken Images", value=True)
@@ -486,11 +487,21 @@ if run_btn:
         # Streamlit progress tracking
         progress_bar = st.progress(0.0)
         crawl_results_stored = []
+        crawl_start_time = time.time()
 
         for current_url, count, crawl_result, queue_size in site_crawler.crawl_site(url_input):
             pct = min(1.0, count / max_pages)
-            progress_bar.progress(pct)
-            status_text.caption(f"🕷️ Scanning ({count}/{max_pages}): {current_url} | Queue: {queue_size}")
+            progress_bar.progress(pct, text=f"{pct*100:.0f}%")
+            elapsed_so_far = time.time() - crawl_start_time
+            pages_per_sec = count / elapsed_so_far if elapsed_so_far > 0 else 0
+            remaining = (max_pages - count) / pages_per_sec if pages_per_sec > 0 else 0
+            status_text.caption(
+                f"🕷️ Scanning ({count}/{max_pages}): {current_url} | "
+                f"Queue: {queue_size} | "
+                f"Elapsed: {elapsed_so_far:.0f}s | "
+                f"Speed: {pages_per_sec:.1f} pages/s | "
+                f"ETA: {remaining:.0f}s"
+            )
 
             if crawl_result and crawl_result.is_success:
                 parser = SEOHTMLParser(html_content=crawl_result.html, base_url=crawl_result.final_url)
@@ -511,6 +522,12 @@ if run_btn:
                 crawl_results_stored.append((crawl_result, metadata, links, images))
 
         progress_bar.progress(1.0)
+        crawl_total_time = time.time() - crawl_start_time
+        crawl_pages_done = len(pages_audited)
+        status_text.success(
+            f"✅ Crawl complete: {crawl_pages_done} pages in {crawl_total_time:.1f}s "
+            f"({crawl_pages_done / crawl_total_time:.1f} pages/s)"
+        )
         status_text.info("⚙️ Running site-wide validations (links, images, duplicates)...")
 
         # Run global audit
