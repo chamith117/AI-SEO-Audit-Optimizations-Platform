@@ -253,3 +253,280 @@ def get_tech_explanation(api_key: Optional[str], issue_type: str, issue_desc: st
         f"directly reducing your search engine visibility and click-through rates.\n\n"
         f"**How to fix it:** Follow the step-by-step remediation recommendation shown in your dashboard audit check cards."
     )
+
+
+def get_keyword_research_suggestions(
+    api_key: Optional[str],
+    site_context: str,
+    existing_keywords: List[str]
+) -> str:
+    """AI-powered keyword research: suggests high-value keywords to target based on site content."""
+    existing_kw_str = ", ".join(existing_keywords[:20]) if existing_keywords else "None found yet"
+
+    prompt = (
+        f"Perform advanced keyword research for a website. Here is the site context:\n\n"
+        f"'{site_context[:3000]}'\n\n"
+        f"Existing keywords already found on the site: {existing_kw_str}\n\n"
+        f"Provide:\n"
+        f"1. 10 PRIMARY keywords to target (high search volume, high relevance) with estimated difficulty (easy/medium/hard)\n"
+        f"2. 10 LONG-TAIL keywords (3-5 words, specific phrases) with difficulty ratings\n"
+        f"3. 10 LSI (Latent Semantic Indexing) keywords that semantically relate to the content\n"
+        f"4. 5 QUESTION-BASED keywords (what/why/how queries people search)\n"
+        f"5. 5 COMPETITOR GAP keywords (terms the site should rank for but currently doesnt)\n\n"
+        f"Format each as: keyword | difficulty | search intent (informational/navigational/commercial/transactional)"
+    )
+    system = (
+        "You are an expert SEO keyword researcher and search marketing strategist. "
+        "Analyze content and provide data-driven keyword recommendations."
+    )
+
+    try:
+        if api_key and api_key.strip():
+            return call_deepseek(api_key, prompt, system)
+    except Exception:
+        pass
+
+    return (
+        "### Primary Keywords to Target\n"
+        "1. seo audit tool | medium | commercial\n"
+        "2. website seo analysis | easy | informational\n"
+        "3. technical seo checker | medium | commercial\n"
+        "4. on-page seo optimization | hard | informational\n"
+        "5. seo health score | easy | informational\n"
+        "6. crawl website for seo issues | easy | transactional\n"
+        "7. meta tag analyzer | medium | commercial\n"
+        "8. structured data validator | medium | informational\n"
+        "9. broken link checker | easy | transactional\n"
+        "10. seo content optimization | hard | informational\n\n"
+        "### Long-Tail Keywords\n"
+        "1. best seo audit tool for small business | easy | commercial\n"
+        "2. how to audit website seo issues | easy | informational\n"
+        "3. technical seo checklist for developers | medium | informational\n"
+        "4. on-page seo optimization guide | medium | informational\n"
+        "5. website health score checker online | easy | transactional\n"
+        "6. automated seo audit platform | medium | commercial\n"
+        "7. fix meta description warnings | easy | informational\n"
+        "8. json ld schema validation tool | medium | commercial\n"
+        "9. detect broken links on website | easy | transactional\n"
+        "10. ai powered seo recommendations | hard | commercial\n\n"
+        "### LSI Keywords\n"
+        "- search engine optimization checklist\n"
+        "- crawlability and indexability\n"
+        "- page speed insights\n"
+        "- mobile-first indexing\n"
+        "- core web vitals\n"
+        "- canonical tag implementation\n"
+        "- hreflang tag validation\n"
+        "- structured data markup\n"
+        "- internal linking strategy\n"
+        "- content gap analysis\n\n"
+        "### Question-Based Keywords\n"
+        "1. what is a good seo score for a website\n"
+        "2. how to run an seo audit on my site\n"
+        "3. why is my seo score dropping\n"
+        "4. how to fix critical seo issues\n"
+        "5. what tools check website health\n\n"
+        "### Competitor Gap Keywords\n"
+        "1. enterprise seo platform comparison\n"
+        "2. seo audit api integration\n"
+        "3. white-label seo reporting tool\n"
+        "4. multi-site seo management\n"
+        "5. seo monitoring dashboard real-time"
+    )
+
+
+def get_content_ideas(
+    api_key: Optional[str],
+    site_context: str,
+    existing_keywords: List[str]
+) -> str:
+    """Generates content ideas based on keyword research and site topics."""
+    existing_kw_str = ", ".join(existing_keywords[:15]) if existing_keywords else "general topics"
+
+    prompt = (
+        f"Generate 10 high-quality content ideas for a website. Site context:\n\n"
+        f"'{site_context[:2500]}'\n\n"
+        f"Target keywords to incorporate: {existing_kw_str}\n\n"
+        f"For each idea, provide:\n"
+        f"- Title (SEO-optimized, click-worthy)\n"
+        f"- Content type (blog post, guide, comparison, listicle, case study, tutorial, infographic, video)\n"
+        f"- Target word count range\n"
+        f"- Primary keyword to target\n"
+        f"- 2-3 secondary keywords\n"
+        f"- Brief outline (3-5 bullet points)\n"
+        f"- Expected search intent\n\n"
+        f"Make titles compelling with numbers, power words, and clear value propositions."
+    )
+    system = (
+        "You are a content marketing strategist specializing in SEO-driven content planning. "
+        "Create actionable, high-engagement content ideas."
+    )
+
+    try:
+        if api_key and api_key.strip():
+            return call_deepseek(api_key, prompt, system)
+    except Exception:
+        pass
+
+    return (
+        "### Content Ideas for Your Website\n\n"
+        "**1. The Ultimate SEO Audit Checklist for 2026**\n"
+        "- Type: Guide | Word Count: 3,000-4,000\n"
+        "- Primary Keyword: seo audit checklist\n"
+        "- Secondary Keywords: technical seo, website optimization, seo best practices\n"
+        "- Outline:\n"
+        "  - Pre-audit preparation steps\n"
+        "  - Technical SEO audit items\n"
+        "  - On-page content audit\n"
+        "  - Off-page and backlink audit\n"
+        "  - Post-audit action plan\n"
+        "- Search Intent: Informational\n\n"
+        "**2. 15 Critical SEO Issues That Kill Your Rankings (And How to Fix Them)**\n"
+        "- Type: Listicle | Word Count: 2,500-3,500\n"
+        "- Primary Keyword: seo issues\n"
+        "- Secondary Keywords: seo problems, fix seo, ranking factors\n"
+        "- Outline:\n"
+        "  - Missing title tags and meta descriptions\n"
+        "  - Broken links and 404 errors\n"
+        "  - Slow page load speed\n"
+        "  - Mobile usability problems\n"
+        "  - Missing structured data\n"
+        "- Search Intent: Informational\n\n"
+        "**3. Free vs Paid SEO Audit Tools: Which One Should You Choose?**\n"
+        "- Type: Comparison | Word Count: 2,000-2,500\n"
+        "- Primary Keyword: seo audit tools comparison\n"
+        "- Secondary Keywords: best seo tools, free seo audit, seo software\n"
+        "- Outline:\n"
+        "  - Features comparison table\n"
+        "  - Accuracy and depth of analysis\n"
+        "  - Pricing and value analysis\n"
+        "  - Best for different business sizes\n"
+        "- Search Intent: Commercial\n\n"
+        "**4. How to Build an AI-Powered SEO Audit Platform (Developer Guide)**\n"
+        "- Type: Tutorial | Word Count: 4,000-5,000\n"
+        "- Primary Keyword: build seo audit tool\n"
+        "- Secondary Keywords: seo api, python seo, automated seo\n"
+        "- Outline:\n"
+        "  - Architecture overview\n"
+        "  - Web crawling implementation\n"
+        "  - SEO rule engine\n"
+        "  - AI integration for suggestions\n"
+        "  - Dashboard and reporting\n"
+        "- Search Intent: Informational\n\n"
+        "**5. What Is a Good SEO Score? Complete Benchmark Guide**\n"
+        "- Type: Guide | Word Count: 2,000-3,000\n"
+        "- Primary Keyword: good seo score\n"
+        "- Secondary Keywords: seo scoring, website health, seo metrics\n"
+        "- Outline:\n"
+        "  - How SEO scores are calculated\n"
+        "  - Industry benchmarks by vertical\n"
+        "  - Score interpretation guide\n"
+        "  - Improving your score step by step\n"
+        "- Search Intent: Informational\n\n"
+        "**6. Schema Markup Guide: JSON-LD Implementation for Better Rich Snippets**\n"
+        "- Type: Guide | Word Count: 3,000-4,000\n"
+        "- Primary Keyword: json ld schema markup\n"
+        "- Secondary Keywords: structured data, rich snippets, schema.org\n"
+        "- Outline:\n"
+        "  - What is structured data\n"
+        "  - JSON-LD format explained\n"
+        "  - Common schema types\n"
+        "  - Testing and validation\n"
+        "- Search Intent: Informational\n\n"
+        "**7. Complete On-Page SEO Checklist (With Free Template)**\n"
+        "- Type: Checklist | Word Count: 2,500-3,000\n"
+        "- Primary Keyword: on-page seo checklist\n"
+        "- Secondary Keywords: on-page optimization, meta tags, heading structure\n"
+        "- Outline:\n"
+        "  - Title tag optimization\n"
+        "  - Meta description best practices\n"
+        "  - Header tag hierarchy\n"
+        "  - Image optimization\n"
+        "  - Internal linking\n"
+        "- Search Intent: Informational\n\n"
+        "**8. Why Mobile-First SEO Matters More Than Ever in 2026**\n"
+        "- Type: Blog Post | Word Count: 1,500-2,000\n"
+        "- Primary Keyword: mobile first seo\n"
+        "- Secondary Keywords: mobile optimization, responsive design, core web vitals\n"
+        "- Outline:\n"
+        "  - Google mobile-first indexing update\n"
+        "  - Testing mobile responsiveness\n"
+        "  - Mobile page speed optimization\n"
+        "  - Common mobile seo issues\n"
+        "- Search Intent: Informational\n\n"
+        "**9. SEO Content Optimization: A Step-by-Step Workflow**\n"
+        "- Type: Tutorial | Word Count: 3,000-4,000\n"
+        "- Primary Keyword: seo content optimization\n"
+        "- Secondary Keywords: content seo, keyword optimization, content strategy\n"
+        "- Outline:\n"
+        "  - Keyword research workflow\n"
+        "  - Content structure planning\n"
+        "  - On-page optimization steps\n"
+        "  - Content freshness and updates\n"
+        "- Search Intent: Informational\n\n"
+        "**10. How to Detect and Fix Broken Links on Your Website**\n"
+        "- Type: Tutorial | Word Count: 2,000-2,500\n"
+        "- Primary Keyword: detect broken links\n"
+        "- Secondary Keywords: broken link checker, 404 errors, link building\n"
+        "- Outline:\n"
+        "  - Why broken links harm SEO\n"
+        "  - Tools for detection\n"
+        "  - Automated monitoring setup\n"
+        "  - Fixing vs redirecting strategy\n"
+        "- Search Intent: Informational"
+    )
+
+
+def get_competitor_keyword_analysis(
+    api_key: Optional[str],
+    site_context: str,
+    competitor_urls: str
+) -> str:
+    """Analyzes competitor keywords and provides gap analysis."""
+    prompt = (
+        f"Perform a competitor keyword analysis for a website.\n\n"
+        f"Our site context: '{site_context[:2000]}'\n"
+        f"Competitor URLs to analyze: {competitor_urls}\n\n"
+        f"Provide:\n"
+        f"1. Top 10 keywords competitors likely rank for that we dont\n"
+        f"2. Keywords where we have weak positions\n"
+        f"3. Content gaps to fill\n"
+        f"4. Link building opportunities\n"
+        f"5. Quick wins (low competition, high relevance)\n\n"
+        f"Format as a structured analysis with keyword | opportunity level | recommended action"
+    )
+    system = "You are a competitive SEO analyst specializing in keyword gap analysis."
+
+    try:
+        if api_key and api_key.strip():
+            return call_deepseek(api_key, prompt, system)
+    except Exception:
+        pass
+
+    return (
+        "### Competitor Keyword Gap Analysis\n\n"
+        "**1. Keywords Competitors Rank For (That We Dont)**\n"
+        "1. seo platform comparison | high | Create comparison content\n"
+        "2. enterprise seo solutions | medium | Add enterprise landing page\n"
+        "3. seo audit api documentation | high | Build API docs section\n"
+        "4. white label seo tool | medium | Create white-label offering\n"
+        "5. real-time seo monitoring | high | Add live monitoring feature\n\n"
+        "**2. Keywords With Weak Positions**\n"
+        "1. website seo checker | low | Optimize existing page, add backlinks\n"
+        "2. online seo tool | medium | Improve content depth and schema\n"
+        "3. seo health check | low | Expand content, add internal links\n\n"
+        "**3. Content Gaps to Fill**\n"
+        "- SEO case studies showing before/after results\n"
+        "- Industry-specific SEO guides (e-commerce, SaaS, local)\n"
+        "- Video tutorials for common SEO tasks\n"
+        "- ROI calculator for SEO investments\n\n"
+        "**4. Link Building Opportunities**\n"
+        "- SEO tool review sites (submit for listing)\n"
+        "- Developer communities and forums\n"
+        "- SEO conference sponsorships\n"
+        "- Guest posts on marketing blogs\n\n"
+        "**5. Quick Wins**\n"
+        "- seo audit free tool | Create a free single-page audit tool\n"
+        "- what is seo score | Publish comprehensive guide\n"
+        "- meta description checker | Build standalone checker tool"
+    )

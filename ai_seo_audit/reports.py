@@ -113,6 +113,79 @@ def export_report_to_html(report: WebsiteAuditReport, output_path: Union[str, Pa
     score = report.score
     score_color = get_score_color_hsl(score)
 
+    # Build keyword section if keyword research data exists
+    keyword_section_html = ""
+    if report.keyword_research:
+        kw = report.keyword_research
+        kw_rows = ""
+        for k in kw.primary_keywords[:15]:
+            kw_rows += f"""
+            <tr>
+                <td><strong>{k.keyword}</strong></td>
+                <td>{k.count}</td>
+                <td>{k.density}%</td>
+                <td>{'Yes' if k.in_title else '-'}</td>
+                <td>{'Yes' if k.in_meta_desc else '-'}</td>
+                <td>{'Yes' if k.in_headings else '-'}</td>
+                <td>{len(k.pages)}</td>
+            </tr>
+            """
+
+        lsi_rows = ""
+        for k in kw.lsi_keywords[:10]:
+            lsi_rows += f"<tr><td>{k.keyword}</td><td>{k.count}</td><td>{k.density}%</td></tr>"
+
+        gap_items = ""
+        for g in kw.keyword_gaps:
+            gap_items += f"<li><strong>{g}</strong></li>"
+
+        keyword_section_html = f"""
+        <h2>Keyword Research</h2>
+        <div class="card" style="padding: 1rem 1.5rem; margin-bottom: 2rem;">
+            <p style="color: var(--text-muted);">Total words analyzed: <strong>{kw.total_words_analyzed}</strong> | Unique words: <strong>{kw.unique_words_found}</strong></p>
+        </div>
+        <h3 style="color: var(--primary);">Primary Keywords</h3>
+        <div class="card" style="padding: 0; overflow-x: auto; margin-bottom: 2rem;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Keyword</th>
+                        <th>Count</th>
+                        <th>Density</th>
+                        <th>In Title</th>
+                        <th>In Meta</th>
+                        <th>In Headings</th>
+                        <th>Pages</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {kw_rows}
+                </tbody>
+            </table>
+        </div>
+        <h3 style="color: var(--primary);">LSI Keywords</h3>
+        <div class="card" style="padding: 0; overflow-x: auto; margin-bottom: 2rem;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>LSI Keyword</th>
+                        <th>Count</th>
+                        <th>Density</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {lsi_rows}
+                </tbody>
+            </table>
+        </div>
+        <h3 style="color: var(--primary);">Keyword Gaps</h3>
+        <div class="card" style="margin-bottom: 2rem;">
+            <ul style="list-style-type: disc; padding-left: 1.5rem; color: var(--text-muted);">
+                {gap_items}
+            </ul>
+        </div>
+        """
+
     html_content = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -381,6 +454,8 @@ def export_report_to_html(report: WebsiteAuditReport, output_path: Union[str, Pa
             {issue_cards_html}
         </div>
 
+        {keyword_section_html}
+
     </div>
 
 </body>
@@ -559,6 +634,82 @@ def export_report_to_pdf(report: WebsiteAuditReport, output_path: Union[str, Pat
     ]))
     story.append(stats_table)
     story.append(PageBreak())
+
+    # --- KEYWORD RESEARCH SECTION ---
+    if report.keyword_research:
+        kw = report.keyword_research
+        story.append(Paragraph("Keyword Research Analysis", h1_style))
+        story.append(Paragraph(
+            f"Total words analyzed: <b>{kw.total_words_analyzed}</b> | "
+            f"Unique words found: <b>{kw.unique_words_found}</b>",
+            body_style
+        ))
+        story.append(Spacer(1, 10))
+
+        # Primary Keywords Table
+        if kw.primary_keywords:
+            story.append(Paragraph("Primary Keywords", h2_style))
+            kw_header = [
+                Paragraph("<b>Keyword</b>", body_style),
+                Paragraph("<b>Count</b>", body_style),
+                Paragraph("<b>Density</b>", body_style),
+                Paragraph("<b>Title</b>", body_style),
+                Paragraph("<b>Meta</b>", body_style),
+                Paragraph("<b>Headings</b>", body_style),
+            ]
+            kw_data = [kw_header]
+            for k in kw.primary_keywords[:12]:
+                kw_data.append([
+                    Paragraph(pdf_escape(k.keyword), body_style),
+                    Paragraph(str(k.count), body_style),
+                    Paragraph(f"{k.density}%", body_style),
+                    Paragraph("Yes" if k.in_title else "-", body_style),
+                    Paragraph("Yes" if k.in_meta_desc else "-", body_style),
+                    Paragraph("Yes" if k.in_headings else "-", body_style),
+                ])
+            kw_table = Table(kw_data, colWidths=[130, 50, 55, 45, 40, 60])
+            kw_table.setStyle(TableStyle([
+                ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e1')),
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f1f5f9')),
+                ('PADDING', (0,0), (-1,-1), 5),
+                ('FONTSIZE', (0,0), (-1,-1), 8),
+            ]))
+            story.append(kw_table)
+            story.append(Spacer(1, 12))
+
+        # LSI Keywords
+        if kw.lsi_keywords:
+            story.append(Paragraph("LSI (Semantic) Keywords", h2_style))
+            lsi_header = [
+                Paragraph("<b>LSI Keyword</b>", body_style),
+                Paragraph("<b>Count</b>", body_style),
+                Paragraph("<b>Density</b>", body_style),
+            ]
+            lsi_data = [lsi_header]
+            for k in kw.lsi_keywords[:10]:
+                lsi_data.append([
+                    Paragraph(pdf_escape(k.keyword), body_style),
+                    Paragraph(str(k.count), body_style),
+                    Paragraph(f"{k.density}%", body_style),
+                ])
+            lsi_table = Table(lsi_data, colWidths=[200, 60, 60])
+            lsi_table.setStyle(TableStyle([
+                ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e1')),
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f1f5f9')),
+                ('PADDING', (0,0), (-1,-1), 5),
+                ('FONTSIZE', (0,0), (-1,-1), 8),
+            ]))
+            story.append(lsi_table)
+            story.append(Spacer(1, 12))
+
+        # Keyword Gaps
+        if kw.keyword_gaps:
+            story.append(Paragraph("Keyword Gaps (Missing from Site)", h2_style))
+            for gap in kw.keyword_gaps:
+                story.append(Paragraph(f"  -  <b>{pdf_escape(gap)}</b>", body_style))
+            story.append(Spacer(1, 10))
+
+        story.append(PageBreak())
 
     # --- DETAILED PAGES REPORT ---
     story.append(Paragraph("Detailed Issues Log", h1_style))

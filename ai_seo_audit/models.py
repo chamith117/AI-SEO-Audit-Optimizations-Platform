@@ -95,6 +95,39 @@ class PageAuditReport(BaseModel):
     score: int = Field(..., ge=0, le=100, description="The page-level SEO score")
 
 
+class KeywordModel(BaseModel):
+    """A single extracted or suggested keyword with metrics."""
+    keyword: str = Field(..., description="The keyword or phrase")
+    count: int = Field(default=0, description="Number of occurrences found")
+    density: float = Field(default=0.0, description="Keyword density percentage")
+    in_title: bool = Field(default=False, description="Whether keyword appears in any page title")
+    in_meta_desc: bool = Field(default=False, description="Whether keyword appears in any meta description")
+    in_headings: bool = Field(default=False, description="Whether keyword appears in any heading")
+    in_url: bool = Field(default=False, description="Whether keyword appears in any URL")
+    pages: List[str] = Field(default_factory=list, description="URLs where this keyword was found")
+
+
+class ContentIdeaModel(BaseModel):
+    """A content idea generated from keyword research."""
+    title: str = Field(..., description="Suggested content title")
+    description: str = Field(..., description="Brief content outline or description")
+    target_keywords: List[str] = Field(default_factory=list, description="Keywords to target")
+    content_type: str = Field(default="blog_post", description="Type of content: blog_post, guide, listicle, faq, comparison")
+    priority: str = Field(default="medium", description="Priority: high, medium, low")
+
+
+class KeywordResearchReport(BaseModel):
+    """Complete keyword research report for the audited site."""
+    primary_keywords: List[KeywordModel] = Field(default_factory=list, description="Top primary keywords extracted from site content")
+    secondary_keywords: List[KeywordModel] = Field(default_factory=list, description="Secondary / long-tail keywords found")
+    lsi_keywords: List[KeywordModel] = Field(default_factory=list, description="LSI (Latent Semantic Indexing) suggested keywords")
+    recommended_keywords: List[KeywordModel] = Field(default_factory=list, description="AI-recommended keywords to target")
+    content_ideas: List[ContentIdeaModel] = Field(default_factory=list, description="AI-generated content ideas")
+    keyword_gaps: List[str] = Field(default_factory=list, description="Important keywords missing from the site")
+    total_words_analyzed: int = Field(default=0, description="Total word count across all pages")
+    unique_words_found: int = Field(default=0, description="Number of unique words found")
+
+
 class DuplicateGroupModel(BaseModel):
     """A group of identical duplicate pages."""
     hash: str = Field(..., description="MD5 hash of page text content")
@@ -115,6 +148,7 @@ class WebsiteAuditReport(BaseModel):
     redirect_chains: Dict[str, List[str]] = Field(default_factory=dict, description="Discovered redirect paths starting at key URLs")
     robots_txt_found: bool = Field(default=False, description="Whether robots.txt was reachable")
     sitemap_xml_found: bool = Field(default=False, description="Whether sitemap.xml was reachable")
+    keyword_research: Optional[KeywordResearchReport] = Field(None, description="Keyword research analysis report")
     score: int = Field(..., ge=0, le=100, description="The aggregate site SEO health score")
     generated_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),

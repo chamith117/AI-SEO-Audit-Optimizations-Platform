@@ -20,6 +20,10 @@ from ai_seo_audit.reports import (
     export_report_to_html,
     export_report_to_pdf,
 )
+from ai_seo_audit.keyword_research import (
+    extract_keywords_from_report,
+    get_page_text_content,
+)
 from ai_seo_audit.ai_engine import (
     get_title_suggestions,
     get_meta_desc_suggestions,
@@ -28,7 +32,10 @@ from ai_seo_audit.ai_engine import (
     get_keyword_suggestions,
     get_faq_suggestions,
     get_geo_recommendations,
-    get_tech_explanation
+    get_tech_explanation,
+    get_keyword_research_suggestions,
+    get_content_ideas,
+    get_competitor_keyword_analysis,
 )
 
 # Page configurations
@@ -271,7 +278,7 @@ if st.session_state.report:
     info_count = total_issues - (critical_count + warning_count)
 
     # Core Navigation Tabs
-    tab_overview, tab_tech, tab_content, tab_images, tab_links, tab_perf, tab_data, tab_ai = st.tabs([
+    tab_overview, tab_tech, tab_content, tab_images, tab_links, tab_perf, tab_data, tab_keywords, tab_ai = st.tabs([
         "📊 Overview",
         "⚙️ Technical SEO",
         "📝 Content SEO",
@@ -279,6 +286,7 @@ if st.session_state.report:
         "🔗 Links",
         "⚡ Performance",
         "🗂️ Structured Data",
+        "🔑 Keyword Research",
         "🧠 AI Suggestions"
     ])
 
@@ -606,3 +614,219 @@ if st.session_state.report:
                     )
                     issue_obj = next(i for i in selected_page.issues if i.issue_type == target_issue)
                     st.write(get_tech_explanation(user_api_key, issue_obj.issue_type, issue_obj.description))
+
+    # 8. KEYWORD RESEARCH TAB
+    with tab_keywords:
+        st.subheader("Keyword Research & Content Strategy")
+        st.write("Extract keywords from your site content, get AI-powered recommendations, and discover content ideas.")
+
+        # Run keyword extraction if not already done
+        if "keyword_report" not in st.session_state:
+            with st.spinner("Extracting keywords from crawled pages..."):
+                kw_report = extract_keywords_from_report(report)
+                st.session_state.keyword_report = kw_report
+
+        kw_report = st.session_state.keyword_report
+
+        # --- Site Keyword Summary Metrics ---
+        st.markdown("---")
+        kw_col1, kw_col2, kw_col3, kw_col4 = st.columns(4)
+        with kw_col1:
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-value">{len(kw_report.primary_keywords)}</div>
+                <div class="metric-label">Primary Keywords</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with kw_col2:
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-value">{len(kw_report.secondary_keywords)}</div>
+                <div class="metric-label">Long-Tail Keywords</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with kw_col3:
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-value">{kw_report.total_words_analyzed}</div>
+                <div class="metric-label">Total Words Analyzed</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with kw_col4:
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-value">{len(kw_report.keyword_gaps)}</div>
+                <div class="metric-label">Keyword Gaps Found</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # Sub-tabs within keyword research
+        kw_subtab1, kw_subtab2, kw_subtab3, kw_subtab4 = st.tabs([
+            "Extracted Keywords",
+            "AI Keyword Research",
+            "Content Ideas",
+            "Competitor Gap Analysis"
+        ])
+
+        # --- Sub-tab 1: Extracted Keywords ---
+        with kw_subtab1:
+            st.subheader("Keywords Extracted from Your Site")
+            st.caption("These keywords were automatically extracted from your crawled page titles, descriptions, headings, and link text.")
+
+            # Primary keywords table
+            st.markdown("#### Primary Keywords (Top Single Words)")
+            if kw_report.primary_keywords:
+                kw_data = [{
+                    "Keyword": k.keyword,
+                    "Count": k.count,
+                    "Density %": k.density,
+                    "In Title": "Yes" if k.in_title else "",
+                    "In Meta Desc": "Yes" if k.in_meta_desc else "",
+                    "In Headings": "Yes" if k.in_headings else "",
+                    "In URL": "Yes" if k.in_url else "",
+                    "Pages Found": len(k.pages),
+                } for k in kw_report.primary_keywords]
+                st.dataframe(pd.DataFrame(kw_data), use_container_width=True, hide_index=True)
+            else:
+                st.info("No primary keywords extracted yet.")
+
+            st.markdown("---")
+
+            # Secondary / long-tail keywords
+            st.markdown("#### Long-Tail Keywords (Multi-word Phrases)")
+            if kw_report.secondary_keywords:
+                sec_data = [{
+                    "Phrase": k.keyword,
+                    "Count": k.count,
+                    "Density %": k.density,
+                    "Pages Found": len(k.pages),
+                } for k in kw_report.secondary_keywords]
+                st.dataframe(pd.DataFrame(sec_data), use_container_width=True, hide_index=True)
+            else:
+                st.info("No long-tail phrases extracted yet.")
+
+            st.markdown("---")
+
+            # LSI keywords
+            st.markdown("#### LSI (Semantic) Keywords")
+            if kw_report.lsi_keywords:
+                lsi_data = [{
+                    "LSI Keyword": k.keyword,
+                    "Count": k.count,
+                    "Density %": k.density,
+                } for k in kw_report.lsi_keywords]
+                st.dataframe(pd.DataFrame(lsi_data), use_container_width=True, hide_index=True)
+            else:
+                st.info("No LSI keywords found.")
+
+            st.markdown("---")
+
+            # Keyword gaps
+            st.markdown("#### Keyword Gaps (Missing from Your Site)")
+            st.caption("Common high-value keywords that are NOT present in your current content. Target these for new content.")
+            if kw_report.keyword_gaps:
+                for gap in kw_report.keyword_gaps:
+                    st.markdown(f"- **{gap}**")
+            else:
+                st.success("No major keyword gaps detected - your content covers a broad range of terms!")
+
+            # Keyword detail expander
+            st.markdown("---")
+            st.markdown("#### Keyword Placement Detail")
+            st.caption("Select a keyword to see exactly where it appears across your site.")
+            all_keywords_list = [k.keyword for k in kw_report.primary_keywords + kw_report.secondary_keywords]
+            if all_keywords_list:
+                selected_kw = st.selectbox("Select keyword to inspect:", options=all_keywords_list)
+                kw_obj = next(
+                    (k for k in kw_report.primary_keywords + kw_report.secondary_keywords if k.keyword == selected_kw),
+                    None
+                )
+                if kw_obj:
+                    st.write(f"**Keyword:** {kw_obj.keyword}")
+                    st.write(f"**Total Count:** {kw_obj.count}")
+                    st.write(f"**Density:** {kw_obj.density}%")
+                    st.write(f"**Found on {len(kw_obj.pages)} page(s):**")
+                    for pg_url in kw_obj.pages:
+                        st.markdown(f"  - [{pg_url}]({pg_url})")
+                    placement_tags = []
+                    if kw_obj.in_title:
+                        placement_tags.append("Title Tag")
+                    if kw_obj.in_meta_desc:
+                        placement_tags.append("Meta Description")
+                    if kw_obj.in_headings:
+                        placement_tags.append("Headings")
+                    if kw_obj.in_url:
+                        placement_tags.append("URL")
+                    if placement_tags:
+                        st.info(f"Also found in: {', '.join(placement_tags)}")
+
+        # --- Sub-tab 2: AI Keyword Research ---
+        with kw_subtab2:
+            st.subheader("AI-Powered Keyword Research")
+            st.caption("Get AI-generated keyword recommendations based on your site content analysis.")
+
+            # Collect all existing keywords for context
+            all_existing = [k.keyword for k in kw_report.primary_keywords[:10]]
+
+            if st.button("Generate AI Keyword Recommendations", type="primary", key="ai_kw_btn"):
+                with st.spinner("DeepSeek AI is analyzing your content and generating keyword strategy..."):
+                    # Build site context from crawled pages
+                    site_context_parts = []
+                    for p in report.pages[:15]:
+                        site_context_parts.append(get_page_text_content(p))
+                    site_context = "\n".join(site_context_parts)
+
+                    ai_kw_result = get_keyword_research_suggestions(user_api_key, site_context, all_existing)
+                    st.session_state.ai_keyword_result = ai_kw_result
+
+            if "ai_keyword_result" in st.session_state:
+                st.markdown(st.session_state.ai_keyword_result)
+
+        # --- Sub-tab 3: Content Ideas ---
+        with kw_subtab3:
+            st.subheader("AI-Generated Content Ideas")
+            st.caption("Get blog post, guide, and tutorial ideas based on your keywords and site topics.")
+
+            if st.button("Generate Content Ideas", type="primary", key="content_ideas_btn"):
+                with st.spinner("DeepSeek AI is generating content strategy ideas..."):
+                    site_context_parts = []
+                    for p in report.pages[:15]:
+                        site_context_parts.append(get_page_text_content(p))
+                    site_context = "\n".join(site_context_parts)
+
+                    content_ideas_result = get_content_ideas(user_api_key, site_context, all_existing)
+                    st.session_state.content_ideas_result = content_ideas_result
+
+            if "content_ideas_result" in st.session_state:
+                st.markdown(st.session_state.content_ideas_result)
+
+        # --- Sub-tab 4: Competitor Gap Analysis ---
+        with kw_subtab4:
+            st.subheader("Competitor Keyword Gap Analysis")
+            st.caption("Enter competitor URLs to discover keyword opportunities you're missing.")
+
+            competitor_input = st.text_area(
+                "Enter competitor URLs (one per line):",
+                placeholder="https://competitor1.com\nhttps://competitor2.com",
+                height=100
+            )
+
+            if st.button("Run Competitor Analysis", type="primary", key="competitor_btn"):
+                if competitor_input.strip():
+                    with st.spinner("DeepSeek AI is analyzing competitor keywords..."):
+                        site_context_parts = []
+                        for p in report.pages[:10]:
+                            site_context_parts.append(get_page_text_content(p))
+                        site_context = "\n".join(site_context_parts)
+
+                        competitor_result = get_competitor_keyword_analysis(
+                            user_api_key, site_context, competitor_input.strip()
+                        )
+                        st.session_state.competitor_result = competitor_result
+                else:
+                    st.warning("Please enter at least one competitor URL.")
+
+            if "competitor_result" in st.session_state:
+                st.markdown(st.session_state.competitor_result)
