@@ -301,7 +301,7 @@ if app_mode == "Keyword Research":
                 ["All Keywords", "Broad Match", "Phrase Match", "Exact Match", "Related", "Questions"]
             )
 
-            def render_kw_table(keywords_list, show_match=True):
+            def render_kw_table(keywords_list, show_match=True, tab_key="all"):
                 if not keywords_list:
                     st.info("No keywords found for this filter.")
                     return
@@ -343,7 +343,7 @@ if app_mode == "Keyword Research":
                 df = pd.DataFrame(table_data)
 
                 # Search filter
-                search = st.text_input("Search keywords...", "", key=f"kw_search_{hash(str(keywords_list[:3]))}")
+                search = st.text_input("Search keywords...", "", key=f"kw_search_{tab_key}")
                 if search:
                     df = df[df["Keyword"].str.contains(search, case=False)]
 
@@ -354,23 +354,23 @@ if app_mode == "Keyword Research":
                 st.download_button(
                     "📥 Export to CSV",
                     data=csv_data,
-                    file_name=f"keywords_{seed.replace(' ', '_')}.csv",
+                    file_name=f"keywords_{seed.replace(' ', '_')}_{tab_key}.csv",
                     mime="text/csv",
-                    key=f"export_{hash(str(keywords_list[:3]))}"
+                    key=f"export_{tab_key}"
                 )
 
             with tab_all:
-                render_kw_table(all_kws, show_match=True)
+                render_kw_table(all_kws, show_match=True, tab_key="all")
             with tab_broad:
-                render_kw_table([k for k in all_kws if k.get("match_type") == "broad"])
+                render_kw_table([k for k in all_kws if k.get("match_type") == "broad"], tab_key="broad")
             with tab_phrase:
-                render_kw_table([k for k in all_kws if k.get("match_type") == "phrase"])
+                render_kw_table([k for k in all_kws if k.get("match_type") == "phrase"], tab_key="phrase")
             with tab_exact:
-                render_kw_table([k for k in all_kws if k.get("match_type") == "exact"])
+                render_kw_table([k for k in all_kws if k.get("match_type") == "exact"], tab_key="exact")
             with tab_related:
-                render_kw_table([k for k in all_kws if k.get("match_type") == "related"])
+                render_kw_table([k for k in all_kws if k.get("match_type") == "related"], tab_key="related")
             with tab_questions:
-                render_kw_table([k for k in all_kws if k.get("match_type") == "question"])
+                render_kw_table([k for k in all_kws if k.get("match_type") == "question"], tab_key="questions")
 
             # Keyword Clustering
             st.markdown("---")
