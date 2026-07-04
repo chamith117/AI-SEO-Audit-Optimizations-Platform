@@ -1480,3 +1480,232 @@ def generate_website_search_schema(site_url: str, site_name: str) -> str:
     }
 
     return json.dumps(schema, indent=2)
+
+
+def generate_llms_txt(
+    site_name: str,
+    site_url: str,
+    site_description: str,
+    pages: list,
+    faqs: list = None,
+    contact_email: str = "",
+    contact_url: str = "",
+    api_docs_url: str = "",
+    blog_url: str = "",
+    features: list = None,
+    pricing_url: str = "",
+    social_links: dict = None
+) -> str:
+    """Generates llms.txt content for AI language models.
+
+    llms.txt is a standard that helps LLMs understand your website.
+    Format: https://llmstxt.org/
+
+    Args:
+        site_name: Name of the website
+        site_url: Full URL of the website
+        site_description: Brief description of the website (1-2 sentences)
+        pages: List of dicts with 'title' and 'url' and optional 'description'
+        faqs: List of dicts with 'question' and 'answer'
+        contact_email: Contact email address
+        contact_url: Contact page URL
+        api_docs_url: API documentation URL
+        blog_url: Blog URL
+        features: List of key features
+        pricing_url: Pricing page URL
+        social_links: Dict of platform -> URL
+    """
+    lines = []
+
+    # Header
+    lines.append(f"# {site_name}")
+    lines.append(f"> {site_description}")
+    lines.append("")
+
+    # Details section
+    lines.append("## Details")
+    lines.append("")
+    lines.append(f"The website provides tools and resources for website management, SEO optimization, and content strategy.")
+    lines.append("")
+    lines.append(f"For more information, visit {site_url}")
+    lines.append("")
+
+    # Contact
+    if contact_email or contact_url:
+        lines.append("## Contact")
+        lines.append("")
+        if contact_email:
+            lines.append(f"Email: {contact_email}")
+        if contact_url:
+            lines.append(f"Contact page: {contact_url}")
+        lines.append("")
+
+    # API Documentation
+    if api_docs_url:
+        lines.append("## API")
+        lines.append("")
+        lines.append(f"API documentation: {api_docs_url}")
+        lines.append("")
+
+    # Features
+    if features:
+        lines.append("## Features")
+        lines.append("")
+        for feature in features:
+            lines.append(f"- {feature}")
+        lines.append("")
+
+    # Pricing
+    if pricing_url:
+        lines.append("## Pricing")
+        lines.append("")
+        lines.append(f"Pricing information: {pricing_url}")
+        lines.append("")
+
+    # Social Links
+    if social_links:
+        lines.append("## Social")
+        lines.append("")
+        for platform, url in social_links.items():
+            lines.append(f"{platform}: {url}")
+        lines.append("")
+
+    # Blog
+    if blog_url:
+        lines.append("## Blog")
+        lines.append("")
+        lines.append(f"Blog: {blog_url}")
+        lines.append("")
+
+    # Pages / Documentation
+    if pages:
+        lines.append("## Docs")
+        lines.append("")
+        for page in pages:
+            title = page.get("title", "Page")
+            url = page.get("url", "")
+            desc = page.get("description", "")
+            if desc:
+                lines.append(f"- [{title}]({url}): {desc}")
+            else:
+                lines.append(f"- [{title}]({url})")
+        lines.append("")
+
+    # FAQs
+    if faqs:
+        lines.append("## FAQs")
+        lines.append("")
+        for faq in faqs:
+            q = faq.get("question", "")
+            a = faq.get("answer", "")
+            if q and a:
+                lines.append(f"### {q}")
+                lines.append(f"{a}")
+                lines.append("")
+
+    # Extra sections
+    lines.append("## Optional")
+    lines.append("")
+    lines.append("This file helps LLMs understand and navigate our website.")
+    lines.append("For any questions about this file, contact us at " + (contact_email or contact_url or site_url))
+    lines.append("")
+
+    return "\n".join(lines)
+
+
+def generate_llms_full_txt(
+    site_name: str,
+    site_url: str,
+    site_description: str,
+    pages: list,
+    faqs: list = None,
+    contact_email: str = "",
+    features: list = None,
+    pricing_url: str = "",
+    blog_url: str = "",
+    api_docs_url: str = "",
+    social_links: dict = None
+) -> str:
+    """Generates llms-full.txt with extended content for AI models.
+
+    This is the extended version that includes more detailed information.
+    """
+    lines = []
+
+    lines.append(f"# {site_name}")
+    lines.append(f"> {site_description}")
+    lines.append("")
+
+    lines.append(f"## About {site_name}")
+    lines.append("")
+    lines.append(f"{site_name} is available at {site_url}")
+    lines.append("")
+    lines.append(f"{site_description}")
+    lines.append("")
+
+    if features:
+        lines.append("## Key Features")
+        lines.append("")
+        for i, feature in enumerate(features, 1):
+            lines.append(f"{i}. {feature}")
+        lines.append("")
+
+    if pages:
+        lines.append("## Pages")
+        lines.append("")
+        for page in pages:
+            title = page.get("title", "Page")
+            url = page.get("url", "")
+            desc = page.get("description", "")
+            lines.append(f"### {title}")
+            lines.append(f"URL: {url}")
+            if desc:
+                lines.append(f"{desc}")
+            lines.append("")
+
+    if faqs:
+        lines.append("## Frequently Asked Questions")
+        lines.append("")
+        for i, faq in enumerate(faqs, 1):
+            q = faq.get("question", "")
+            a = faq.get("answer", "")
+            if q and a:
+                lines.append(f"### Q{i}: {q}")
+                lines.append(f"{a}")
+                lines.append("")
+
+    if contact_email:
+        lines.append("## Contact")
+        lines.append("")
+        lines.append(f"Email: {contact_email}")
+        lines.append("")
+
+    if blog_url:
+        lines.append("## Blog")
+        lines.append("")
+        lines.append(f"Blog: {blog_url}")
+        lines.append("")
+
+    if api_docs_url:
+        lines.append("## API Documentation")
+        lines.append("")
+        lines.append(f"API docs: {api_docs_url}")
+        lines.append("")
+
+    if social_links:
+        lines.append("## Social Media")
+        lines.append("")
+        for platform, url in social_links.items():
+            lines.append(f"- {platform}: {url}")
+        lines.append("")
+
+    if pricing_url:
+        lines.append("## Pricing")
+        lines.append("")
+        lines.append(f"Pricing: {pricing_url}")
+        lines.append("")
+
+    lines.append("---")
+    lines.append(f"Generated by {site_name} SEO Audit Tool")
+
+    return "\n".join(lines)

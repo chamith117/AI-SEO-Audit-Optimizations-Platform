@@ -50,6 +50,8 @@ from ai_seo_audit.ai_engine import (
     generate_local_business_schema,
     generate_product_schema,
     generate_website_search_schema,
+    generate_llms_txt,
+    generate_llms_full_txt,
 )
 
 # Page configurations
@@ -727,6 +729,50 @@ if st.session_state.report:
                 use_container_width=True
             )
 
+        # llms.txt Export
+        llms_pages = [{"title": p.metadata.title or p.url, "url": p.url, "description": p.metadata.meta_description or ""} for p in report.pages[:20]]
+        llms_txt_content = generate_llms_txt(
+            site_name=report.start_url.split("//")[-1].split("/")[0],
+            site_url=report.start_url,
+            site_description=f"AI SEO Audit Report for {report.start_url}. Score: {report.score}/100.",
+            pages=llms_pages,
+        )
+        llms_full_content = generate_llms_full_txt(
+            site_name=report.start_url.split("//")[-1].split("/")[0],
+            site_url=report.start_url,
+            site_description=f"AI SEO Audit Report for {report.start_url}. Score: {report.score}/100.",
+            pages=llms_pages,
+        )
+
+        st.markdown("---")
+        st.subheader("AI-Ready Files (llms.txt)")
+        st.caption("Files that help AI language models (ChatGPT, Claude, Gemini) understand your website.")
+
+        llm_col1, llm_col2 = st.columns(2)
+        with llm_col1:
+            st.download_button(
+                "Download llms.txt",
+                data=llms_txt_content,
+                file_name="llms.txt",
+                mime="text/plain",
+                use_container_width=True,
+                help="Standard format for AI models to understand your site"
+            )
+        with llm_col2:
+            st.download_button(
+                "Download llms-full.txt",
+                data=llms_full_content,
+                file_name="llms-full.txt",
+                mime="text/plain",
+                use_container_width=True,
+                help="Extended format with full page details for AI models"
+            )
+
+        with st.expander("Preview llms.txt"):
+            st.code(llms_txt_content, language="text")
+        with st.expander("Preview llms-full.txt"):
+            st.code(llms_full_content, language="text")
+
         st.markdown("---")
         st.subheader("Crawled Pages Overview")
         
@@ -984,7 +1030,8 @@ if st.session_state.report:
                     "WebPage",
                     "LocalBusiness",
                     "Product",
-                    "Website Search Box"
+                    "Website Search Box",
+                    "llms.txt (AI-Ready File)"
                 ],
                 key="schema_type_select"
             )
@@ -1164,23 +1211,104 @@ if st.session_state.report:
                     st.code(schema, language="json")
                     st.download_button("Download Search Box Schema", schema, "searchbox-schema.json", "application/json")
 
+            # llms.txt Generator
+            elif schema_type == "llms.txt (AI-Ready File)":
+                st.markdown("#### llms.txt Generator")
+                st.caption("Generate files that help AI language models (ChatGPT, Claude, Gemini) understand your website. Place in your site root.")
+
+                llm_name = st.text_input("Website Name", value=report.start_url.split("//")[-1].split("/")[0], key="llm_name")
+                llm_url = st.text_input("Website URL", value=url_input, key="llm_url")
+                llm_desc = st.text_area("Website Description", value=f"AI-powered SEO audit and optimization platform.", key="llm_desc")
+                llm_email = st.text_input("Contact Email", placeholder="info@yoursite.com", key="llm_email")
+                llm_contact = st.text_input("Contact Page URL", key="llm_contact")
+                llm_blog = st.text_input("Blog URL", key="llm_blog")
+                llm_api = st.text_input("API Docs URL", key="llm_api")
+                llm_pricing = st.text_input("Pricing URL", key="llm_pricing")
+
+                st.markdown("**Key Features (one per line):**")
+                llm_features_text = st.text_area(
+                    "Features",
+                    value="AI-powered SEO analysis\nWebsite crawling and auditing\nKeyword research\nStructured data generation\nPDF/HTML/JSON report export",
+                    key="llm_features"
+                )
+
+                st.markdown("**FAQs (for AI models to answer questions about your site):**")
+                llm_faqs = []
+                for i in range(5):
+                    fc1, fc2 = st.columns(2)
+                    with fc1:
+                        q = st.text_input(f"FAQ Question {i+1}", key=f"llm_faq_q_{i}")
+                    with fc2:
+                        a = st.text_input(f"FAQ Answer {i+1}", key=f"llm_faq_a_{i}")
+                    if q and a:
+                        llm_faqs.append({"question": q, "answer": a})
+
+                st.markdown("**Social Links (optional):**")
+                sl_cols = st.columns(3)
+                with sl_cols[0]:
+                    sl_twitter = st.text_input("Twitter/X URL", key="sl_twitter")
+                with sl_cols[1]:
+                    sl_github = st.text_input("GitHub URL", key="sl_github")
+                with sl_cols[2]:
+                    sl_linkedin = st.text_input("LinkedIn URL", key="sl_linkedin")
+
+                if st.button("Generate llms.txt", key="gen_llms"):
+                    features = [f.strip() for f in llm_features_text.split("\n") if f.strip()]
+                    social = {}
+                    if sl_twitter: social["Twitter"] = sl_twitter
+                    if sl_github: social["GitHub"] = sl_github
+                    if sl_linkedin: social["LinkedIn"] = sl_linkedin
+
+                    llms_content = generate_llms_txt(
+                        site_name=llm_name,
+                        site_url=llm_url,
+                        site_description=llm_desc,
+                        pages=[{"title": p.metadata.title or p.url, "url": p.url, "description": p.metadata.meta_description or ""} for p in report.pages[:20]],
+                        faqs=llm_faqs if llm_faqs else None,
+                        contact_email=llm_email,
+                        contact_url=llm_contact,
+                        api_docs_url=llm_api,
+                        blog_url=llm_blog,
+                        features=features,
+                        pricing_url=llm_pricing,
+                        social_links=social if social else None,
+                    )
+                    st.code(llms_content, language="text")
+                    st.download_button("Download llms.txt", llms_content, "llms.txt", "text/plain")
+
+                    llms_full = generate_llms_full_txt(
+                        site_name=llm_name,
+                        site_url=llm_url,
+                        site_description=llm_desc,
+                        pages=[{"title": p.metadata.title or p.url, "url": p.url, "description": p.metadata.meta_description or ""} for p in report.pages[:20]],
+                        faqs=llm_faqs if llm_faqs else None,
+                        contact_email=llm_email,
+                        features=features,
+                        pricing_url=llm_pricing,
+                        blog_url=llm_blog,
+                        api_docs_url=llm_api,
+                        social_links=social if social else None,
+                    )
+                    st.download_button("Download llms-full.txt", llms_full, "llms-full.txt", "text/plain")
+
             # How to add instructions
-            st.markdown("---")
-            st.markdown("#### How to Add This to Your Website")
-            st.markdown("""
-            **HTML:** Paste the code inside `<head>` section:
-            ```html
-            <script type="application/ld+json">
-            { paste code here }
-            </script>
-            ```
+            if schema_type != "llms.txt (AI-Ready File)":
+                st.markdown("---")
+                st.markdown("#### How to Add This to Your Website")
+                st.markdown("""
+                **HTML:** Paste the code inside `<head>` section:
+                ```html
+                <script type="application/ld+json">
+                { paste code here }
+                </script>
+                ```
 
-            **WordPress:** Use a plugin like "Insert Headers and Footers" or "Yoast SEO" > Advanced > JSON-LD
+                **WordPress:** Use a plugin like "Insert Headers and Footers" or "Yoast SEO" > Advanced > JSON-LD
 
-            **Shopify:** Go to Online Store > Themes > Edit code > theme.liquid > paste in `<head>`
+                **Shopify:** Go to Online Store > Themes > Edit code > theme.liquid > paste in `<head>`
 
-            **Webflow:** Project Settings > Custom Code > Head Code > paste the script tag
-            """)
+                **Webflow:** Project Settings > Custom Code > Head Code > paste the script tag
+                """)
 
     # 9. ADVANCED AUDIT TAB
     with tab_advanced:
