@@ -19,6 +19,7 @@ from ai_seo_audit.models import WebsiteAuditReport, AdvancedAuditReport, SiteAdv
 from ai_seo_audit.reports import (
     export_report_to_html,
     export_report_to_pdf,
+    export_report_to_xml_sitemap,
 )
 from ai_seo_audit.keyword_research import (
     extract_keywords_from_report,
@@ -643,7 +644,7 @@ if st.session_state.report:
         st.subheader("Download Audit Exports")
         
         # Download utilities in memory
-        col_d1, col_d2, col_d3, col_d4 = st.columns(4)
+        col_d1, col_d2, col_d3, col_d4, col_d5 = st.columns(5)
         
         # JSON Export bytes
         json_data = report.model_dump_json(indent=2)
@@ -701,6 +702,20 @@ if st.session_state.report:
                 data=pdf_bytes,
                 file_name="seo_report.pdf",
                 mime="application/pdf",
+                use_container_width=True
+            )
+
+        # XML Sitemap Export bytes
+        with tempfile.NamedTemporaryFile(suffix=".xml", delete=False) as tmp_xml:
+            export_report_to_xml_sitemap(report, tmp_xml.name)
+            with open(tmp_xml.name, "r", encoding="utf-8") as f:
+                xml_bytes = f.read()
+        with col_d5:
+            st.download_button(
+                label="📥 Download XML Sitemap",
+                data=xml_bytes,
+                file_name="sitemap.xml",
+                mime="application/xml",
                 use_container_width=True
             )
 

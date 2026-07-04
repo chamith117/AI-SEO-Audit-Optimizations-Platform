@@ -2,6 +2,7 @@
 """
 
 import csv
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Union, List
 from rich.console import Console
@@ -863,3 +864,64 @@ def get_score_description(score: int) -> str:
     if score >= 90: return "Excellent Health"
     if score >= 70: return "Satisfactory Health"
     return "Needs Immediate Remediation"
+
+
+def export_report_to_xml_sitemap(report: WebsiteAuditReport, output_path: Union[str, Path]) -> None:
+    """Generates a valid XML sitemap from the crawled pages."""
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    # Build priority based on score and depth
+    def _get_priority(url: str, score: int) -> str:
+        if url.rstrip("/") == report.start_url.rstrip("/"):
+            return "1.0"
+        if score >= 80:
+            return "0.8"
+        if score >= 60:
+            return "0.6"
+        return "0.4"
+
+    # Build changefreq based on page type
+    def _get_changefreq(url: str) -> str:
+        url_lower = url.lower()
+        if any(w in url_lower for w in ["blog", "news", "post", "article"]):
+            return "weekly"
+        if any(w in url_lower for w in ["product", "shop", "store", "price"]):
+            return "daily"
+        if any(w in url_lower for w in ["about", "contact", "team", "company"]):
+            return "monthly"
+        return "weekly"
+
+    xml_lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    ]
+
+    for page in report.pages:
+        priority = _get_priority(page.url, page.score)
+        changefreq = _get_changefreq(page.url)
+
+        xml_lines.append("  <url>")
+        xml_lines.append(f"    <loc>{_xml_escape(page.url)}</loc>")
+        xml_lines.append(f"    <lastmod>{now}</lastmod>")
+        xml_lines.append(f"    <changefreq>{changefreq}</changefreq>")
+        xml_lines.append(f"    <priority>{priority}</priority>")
+        xml_lines.append("  </url>")
+
+    xml_lines.append("</urlset>")
+
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(xml_lines))
+
+
+def _xml_escape(text: str) -> str:
+    """Escapes XML special characters."""
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&apos;")
+    )
