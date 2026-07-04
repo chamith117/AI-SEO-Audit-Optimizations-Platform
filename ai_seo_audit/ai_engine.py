@@ -530,3 +530,223 @@ def get_competitor_keyword_analysis(
         "- what is seo score | Publish comprehensive guide\n"
         "- meta description checker | Build standalone checker tool"
     )
+
+
+def calculate_ai_visibility_score(
+    metadata,
+    content_quality,
+    security_headers,
+    mixed_content,
+    links,
+    images,
+    is_https,
+    crawl_result
+) -> dict:
+    """Calculates AI Search Engine Visibility Score based on multiple factors.
+
+    Returns a dict with overall_score, grade, factors list, and sub-scores.
+    """
+    from ai_seo_audit.models import AIVisibilityFactorModel
+
+    factors = []
+    weights = {}
+
+    # 1. Structured Data (JSON-LD) - Weight: 15%
+    json_ld_valid = sum(1 for j in metadata.json_ld if j.valid)
+    json_ld_total = len(metadata.json_ld)
+    if json_ld_total > 0 and json_ld_valid == json_ld_total:
+        sd_score = 100
+        sd_status = "good"
+        sd_details = f"{json_ld_valid} valid JSON-LD blocks found"
+        sd_rec = ""
+    elif json_ld_total > 0:
+        sd_score = 60
+        sd_status = "warning"
+        sd_details = f"{json_ld_valid}/{json_ld_total} JSON-LD blocks are valid"
+        sd_rec = "Fix invalid JSON-LD blocks to improve AI structured data understanding"
+    else:
+        sd_score = 20
+        sd_status = "critical"
+        sd_details = "No structured data (JSON-LD) found"
+        sd_rec = "Add JSON-LD structured data (Article, FAQPage, Organization, etc.)"
+    factors.append(AIVisibilityFactorModel(name="Structured Data", score=sd_score, weight=0.15, status=sd_status, details=sd_details, recommendation=sd_rec))
+    weights["structured_data"] = sd_score
+
+    # 2. Meta Description Quality - Weight: 12%
+    if metadata.meta_description and len(metadata.meta_description) >= 50 and len(metadata.meta_description) <= 160:
+        md_score = 100
+        md_status = "good"
+        md_details = f"Meta description is {len(metadata.meta_description)} chars (optimal: 50-160)"
+        md_rec = ""
+    elif metadata.meta_description:
+        md_score = 50
+        md_status = "warning"
+        md_details = f"Meta description is {len(metadata.meta_description)} chars (should be 50-160)"
+        md_rec = "Adjust meta description to 50-160 characters for better AI snippet extraction"
+    else:
+        md_score = 0
+        md_status = "critical"
+        md_details = "No meta description found"
+        md_rec = "Add a descriptive meta description (50-160 chars) - AI engines use this for summaries"
+    factors.append(AIVisibilityFactorModel(name="Meta Description", score=md_score, weight=0.12, status=md_status, details=md_details, recommendation=md_rec))
+    weights["meta_desc"] = md_score
+
+    # 3. Heading Structure - Weight: 10%
+    headings = metadata.headings
+    h1_count = sum(1 for h in headings if h.level == 1)
+    has_h2 = any(h.level == 2 for h in headings)
+    has_h3 = any(h.level == 3 for h in headings)
+    heading_score = 0
+    if h1_count == 1: heading_score += 40
+    elif h1_count > 1: heading_score += 20
+    if has_h2: heading_score += 30
+    if has_h3: heading_score += 20
+    if len(headings) >= 3: heading_score += 10
+    heading_score = min(100, heading_score)
+    hs_status = "good" if heading_score >= 70 else ("warning" if heading_score >= 40 else "critical")
+    hs_details = f"{len(headings)} headings found, {h1_count} H1 tags"
+    hs_rec = "" if heading_score >= 70 else "Use semantic heading hierarchy (H1 > H2 > H3) for better AI content parsing"
+    factors.append(AIVisibilityFactorModel(name="Heading Structure", score=heading_score, weight=0.10, status=hs_status, details=hs_details, recommendation=hs_rec))
+    weights["headings"] = heading_score
+
+    # 4. Content Depth & Quality - Weight: 15%
+    word_count = content_quality.word_count if content_quality else 0
+    if word_count >= 1500:
+        cd_score = 100
+        cd_status = "good"
+    elif word_count >= 800:
+        cd_score = 75
+        cd_status = "good"
+    elif word_count >= 300:
+        cd_score = 50
+        cd_status = "warning"
+    else:
+        cd_score = 20
+        cd_status = "critical"
+    cd_details = f"{word_count:,} words on page"
+    cd_rec = "" if word_count >= 800 else "AI engines prefer comprehensive content. Aim for 800+ words with detailed coverage."
+    factors.append(AIVisibilityFactorModel(name="Content Depth", score=cd_score, weight=0.15, status=cd_status, details=cd_details, recommendation=cd_rec))
+    weights["content_depth"] = cd_score
+
+    # 5. E-E-A-T Signals - Weight: 12%
+    eeat_score = 50  # Base score
+    if metadata.open_graph: eeat_score += 10
+    if metadata.twitter_cards: eeat_score += 5
+    if metadata.json_ld: eeat_score += 15
+    if metadata.canonical_url: eeat_score += 10
+    if content_quality and content_quality.external_link_count > 0: eeat_score += 10
+    eeat_score = min(100, eeat_score)
+    eeat_status = "good" if eeat_score >= 70 else ("warning" if eeat_score >= 40 else "critical")
+    eeat_details = f"E-E-A-T signals: OG={bool(metadata.open_graph)}, Twitter={bool(metadata.twitter_cards)}, Schema={bool(metadata.json_ld)}"
+    eeat_rec = "" if eeat_score >= 70 else "Add author info, external citations, and social proof to strengthen E-E-A-T"
+    factors.append(AIVisibilityFactorModel(name="E-E-A-T Signals", score=eeat_score, weight=0.12, status=eeat_status, details=eeat_details, recommendation=eeat_rec))
+    weights["eeat"] = eeat_score
+
+    # 6. Answer Snippet Optimization - Weight: 10%
+    answer_score = 0
+    if metadata.headings:
+        # Check if headings contain question words
+        question_headings = sum(1 for h in metadata.headings if any(w in h.text.lower() for w in ["what", "why", "how", "when", "where", "who", "which"]))
+        answer_score += min(40, question_headings * 15)
+    if metadata.meta_description and any(w in metadata.meta_description.lower() for w in ["what is", "how to", "guide", "learn", "discover"]):
+        answer_score += 30
+    if content_quality and content_quality.word_count >= 500:
+        answer_score += 30
+    answer_score = min(100, answer_score)
+    ans_status = "good" if answer_score >= 60 else ("warning" if answer_score >= 30 else "critical")
+    ans_details = f"Answer optimization: {question_headings if metadata.headings else 0} question-format headings"
+    ans_rec = "" if answer_score >= 60 else "Add question-format headings (What is..., How to...) and direct answer paragraphs"
+    factors.append(AIVisibilityFactorModel(name="Answer Snippet Ready", score=answer_score, weight=0.10, status=ans_status, details=ans_details, recommendation=ans_rec))
+    weights["answer_snippet"] = answer_score
+
+    # 7. Technical Health - Weight: 10%
+    tech_score = 100
+    if not is_https: tech_score -= 30
+    if not metadata.viewport: tech_score -= 20
+    sec_issues = sum(1 for h in (security_headers or []) if not h.present and h.severity in ["CRITICAL", "WARNING"])
+    tech_score -= min(30, sec_issues * 5)
+    if mixed_content: tech_score -= 20
+    tech_score = max(0, tech_score)
+    tech_status = "good" if tech_score >= 70 else ("warning" if tech_score >= 40 else "critical")
+    tech_details = f"HTTPS={is_https}, Security issues={sec_issues}, Mixed content={len(mixed_content or [])}"
+    tech_rec = "" if tech_score >= 70 else "Fix security headers, mixed content, and ensure HTTPS"
+    factors.append(AIVisibilityFactorModel(name="Technical Health", score=tech_score, weight=0.10, status=tech_status, details=tech_details, recommendation=tech_rec))
+    weights["technical"] = tech_score
+
+    # 8. Image Alt Text Coverage - Weight: 8%
+    if images:
+        alt_coverage = sum(1 for i in images if not i.is_missing_alt) / len(images) * 100
+    else:
+        alt_coverage = 100
+    img_score = int(alt_coverage)
+    img_status = "good" if img_score >= 80 else ("warning" if img_score >= 50 else "critical")
+    img_details = f"Alt text coverage: {img_score}% ({sum(1 for i in images if not i.is_missing_alt)}/{len(images)} images)"
+    img_rec = "" if img_score >= 80 else "Add descriptive alt text to all images - AI engines use this for image understanding"
+    factors.append(AIVisibilityFactorModel(name="Image Alt Text", score=img_score, weight=0.08, status=img_status, details=img_details, recommendation=img_rec))
+    weights["image_alt"] = img_score
+
+    # 9. Internal Linking - Weight: 8%
+    int_links = sum(1 for l in links if l.is_internal)
+    if int_links >= 10:
+        il_score = 100
+    elif int_links >= 5:
+        il_score = 70
+    elif int_links >= 2:
+        il_score = 40
+    else:
+        il_score = 15
+    il_status = "good" if il_score >= 70 else ("warning" if il_score >= 40 else "critical")
+    il_details = f"{int_links} internal links found"
+    il_rec = "" if il_score >= 70 else "Add more internal links to help AI engines discover and connect content"
+    factors.append(AIVisibilityFactorModel(name="Internal Links", score=il_score, weight=0.08, status=il_status, details=il_details, recommendation=il_rec))
+    weights["internal_links"] = il_score
+
+    # 10. Open Graph & Social - Weight: 5%
+    og_score = 0
+    if "og:title" in metadata.open_graph: og_score += 35
+    if "og:description" in metadata.open_graph: og_score += 35
+    if "og:image" in metadata.open_graph: og_score += 30
+    og_status = "good" if og_score >= 70 else ("warning" if og_score >= 35 else "critical")
+    og_details = f"OG tags: {len(metadata.open_graph)} found"
+    og_rec = "" if og_score >= 70 else "Add og:title, og:description, og:image for better social and AI visibility"
+    factors.append(AIVisibilityFactorModel(name="Social Meta Tags", score=og_score, weight=0.05, status=og_status, details=og_details, recommendation=og_rec))
+    weights["social"] = og_score
+
+    # Calculate overall score
+    overall = sum(f.score * f.weight for f in factors)
+    overall = max(0, min(100, int(overall)))
+
+    # Grade
+    if overall >= 90: grade = "A+"
+    elif overall >= 80: grade = "A"
+    elif overall >= 70: grade = "B"
+    elif overall >= 60: grade = "C"
+    elif overall >= 40: grade = "D"
+    else: grade = "F"
+
+    # AI Engine specific scores (weighted differently per engine)
+    google_ai = int(overall * 0.9 + (sd_score * 0.1))
+    chatgpt = int(overall * 0.85 + (cd_score * 0.15))
+    perplexity = int(overall * 0.8 + (answer_score * 0.2))
+
+    # Citation potential
+    citation = int((cd_score * 0.3 + sd_score * 0.3 + eeat_score * 0.2 + answer_score * 0.2))
+
+    # GEO readiness
+    geo = int((sd_score * 0.25 + answer_score * 0.25 + cd_score * 0.2 + eeat_score * 0.15 + heading_score * 0.15))
+
+    return {
+        "overall_score": overall,
+        "grade": grade,
+        "factors": factors,
+        "ai_engine_scores": {
+            "Google AI Overview": google_ai,
+            "ChatGPT Search": chatgpt,
+            "Perplexity": perplexity,
+        },
+        "eeat_score": eeat_score,
+        "geo_readiness": geo,
+        "citation_potential": citation,
+        "structured_data_score": sd_score,
+        "answer_snippet_score": answer_score,
+    }

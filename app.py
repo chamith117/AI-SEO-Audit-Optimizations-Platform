@@ -870,13 +870,90 @@ if st.session_state.report:
             st.markdown("---")
 
             # Sub-tabs within Advanced Audit
-            adv_sub1, adv_sub2, adv_sub3, adv_sub4, adv_sub5 = st.tabs([
+            adv_sub1, adv_sub2, adv_sub3, adv_sub4, adv_sub5, adv_sub6 = st.tabs([
+                "AI Visibility Score",
                 "Security Headers",
                 "Content Quality",
                 "Mixed Content",
                 "Redirect Chains",
                 "URL & Link Score"
             ])
+
+            # --- AI Visibility Score ---
+            with adv_sub1:
+                st.subheader("AI Search Engine Visibility Score")
+                st.caption("How well your content performs for AI search engines: Google AI Overview, ChatGPT, Perplexity.")
+
+                # Show AI visibility for each page
+                for page_adv in adv.pages:
+                    if page_adv.ai_visibility:
+                        ai = page_adv.ai_visibility
+
+                        with st.expander(f"🤖 {page_adv.url} — Grade: **{ai.grade}** | Score: **{ai.overall_score}/100**", expanded=True):
+
+                            # Overall score gauge
+                            score_color = "#22c55e" if ai.overall_score >= 80 else ("#f59e0b" if ai.overall_score >= 60 else "#ef4444")
+                            st.markdown(f"""
+                            <div style="text-align:center; padding: 1rem; background: rgba(30,41,59,0.5); border-radius: 12px; border: 2px solid {score_color};">
+                                <div style="font-size: 3rem; font-weight: 800; color: {score_color};">{ai.overall_score}</div>
+                                <div style="font-size: 1.2rem; color: #94a3b8;">Overall AI Visibility Grade: <strong style="color: {score_color};">{ai.grade}</strong></div>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                            # AI Engine scores
+                            st.markdown("#### AI Engine Visibility")
+                            ae1, ae2, ae3 = st.columns(3)
+                            with ae1:
+                                ga_score = ai.ai_engine_scores.get("Google AI Overview", 0)
+                                ga_color = "#22c55e" if ga_score >= 70 else ("#f59e0b" if ga_score >= 50 else "#ef4444")
+                                st.metric("Google AI Overview", f"{ga_score}/100")
+                            with ae2:
+                                cg_score = ai.ai_engine_scores.get("ChatGPT Search", 0)
+                                cg_color = "#22c55e" if cg_score >= 70 else ("#f59e0b" if cg_score >= 50 else "#ef4444")
+                                st.metric("ChatGPT Search", f"{cg_score}/100")
+                            with ae3:
+                                pp_score = ai.ai_engine_scores.get("Perplexity", 0)
+                                pp_color = "#22c55e" if pp_score >= 70 else ("#f59e0b" if pp_score >= 50 else "#ef4444")
+                                st.metric("Perplexity", f"{pp_score}/100")
+
+                            # Sub-scores
+                            st.markdown("#### Score Breakdown")
+                            s1, s2, s3, s4, s5 = st.columns(5)
+                            with s1:
+                                st.metric("E-E-A-T", f"{ai.eeat_score}/100")
+                            with s2:
+                                st.metric("GEO Readiness", f"{ai.geo_readiness}/100")
+                            with s3:
+                                st.metric("Citation Potential", f"{ai.citation_potential}/100")
+                            with s4:
+                                st.metric("Structured Data", f"{ai.structured_data_score}/100")
+                            with s5:
+                                st.metric("Answer Snippets", f"{ai.answer_snippet_score}/100")
+
+                            # Factor details table
+                            st.markdown("#### Detailed Factor Analysis")
+                            factor_data = []
+                            for f in ai.factors:
+                                status_icon = "✅" if f.status == "good" else ("⚠️" if f.status == "warning" else "❌")
+                                factor_data.append({
+                                    "Factor": f.name,
+                                    "Score": f"{f.score}/100",
+                                    "Weight": f"{int(f.weight*100)}%",
+                                    "Status": f"{status_icon} {f.status.title()}",
+                                    "Details": f.details,
+                                    "Recommendation": f.recommendation,
+                                })
+                            st.dataframe(pd.DataFrame(factor_data), use_container_width=True, hide_index=True)
+
+                            # Improvement recommendations
+                            critical_factors = [f for f in ai.factors if f.status == "critical"]
+                            warning_factors = [f for f in ai.factors if f.status == "warning"]
+                            if critical_factors or warning_factors:
+                                st.markdown("#### Priority Improvements")
+                                for f in critical_factors:
+                                    st.error(f"**{f.name}** ({f.score}/100): {f.recommendation}")
+                                for f in warning_factors:
+                                    st.warning(f"**{f.name}** ({f.score}/100): {f.recommendation}")
 
             # --- Security Headers ---
             with adv_sub1:

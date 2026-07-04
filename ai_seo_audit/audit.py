@@ -555,6 +555,31 @@ class SEOAuditor:
         # 6. Internal Link Score
         internal_link_score = self._score_internal_links(links, metadata)
 
+        # 7. AI Visibility Score
+        from ai_seo_audit.ai_engine import calculate_ai_visibility_score
+        ai_visibility_data = calculate_ai_visibility_score(
+            metadata=metadata,
+            content_quality=content_quality,
+            security_headers=security_headers,
+            mixed_content=mixed_content,
+            links=links,
+            images=images,
+            is_https=is_https,
+            crawl_result=crawl_result
+        )
+        from ai_seo_audit.models import AIVisibilityReport
+        ai_visibility = AIVisibilityReport(
+            overall_score=ai_visibility_data["overall_score"],
+            grade=ai_visibility_data["grade"],
+            factors=ai_visibility_data["factors"],
+            ai_engine_scores=ai_visibility_data["ai_engine_scores"],
+            eeat_score=ai_visibility_data["eeat_score"],
+            geo_readiness=ai_visibility_data["geo_readiness"],
+            citation_potential=ai_visibility_data["citation_potential"],
+            structured_data_score=ai_visibility_data["structured_data_score"],
+            answer_snippet_score=ai_visibility_data["answer_snippet_score"],
+        )
+
         return AdvancedAuditReport(
             url=url,
             security_headers=security_headers,
@@ -563,6 +588,7 @@ class SEOAuditor:
             mixed_content=mixed_content,
             url_structure_score=url_structure_score,
             internal_link_score=internal_link_score,
+            ai_visibility=ai_visibility,
         )
 
     def _analyze_security_headers(self, crawl_result: CrawlResult) -> List[SecurityHeaderModel]:

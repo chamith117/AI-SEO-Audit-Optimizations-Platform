@@ -178,6 +178,31 @@ class MixedContentModel(BaseModel):
     html_snippet: Optional[str] = None
 
 
+class AIVisibilityFactorModel(BaseModel):
+    """A single AI visibility scoring factor."""
+    name: str = Field(..., description="Factor name")
+    score: int = Field(default=0, ge=0, le=100, description="Score for this factor (0-100)")
+    weight: float = Field(default=1.0, description="Weight in overall score")
+    status: str = Field(default="good", description="good, warning, or critical")
+    details: str = Field(default="", description="Details about this factor")
+    recommendation: str = Field(default="", description="How to improve")
+
+
+class AIVisibilityReport(BaseModel):
+    """AI Search Engine Visibility Score report."""
+    overall_score: int = Field(default=0, ge=0, le=100, description="Overall AI visibility score (0-100)")
+    grade: str = Field(default="N/A", description="Grade: A+, A, B, C, D, F")
+    factors: List[AIVisibilityFactorModel] = Field(default_factory=list, description="Individual scoring factors")
+    summary: str = Field(default="", description="AI-generated summary of visibility")
+    ai_engine_scores: Dict[str, int] = Field(default_factory=dict, description="Scores per AI engine: google_ai, chatgpt, perplexity")
+    content_freshness: str = Field(default="unknown", description="Content freshness assessment")
+    eeat_score: int = Field(default=0, ge=0, le=100, description="E-E-A-T signal score")
+    geo_readiness: int = Field(default=0, ge=0, le=100, description="Generative Engine Optimization readiness")
+    citation_potential: int = Field(default=0, ge=0, le=100, description="How likely AI engines will cite this content")
+    structured_data_score: int = Field(default=0, ge=0, le=100, description="Structured data completeness for AI")
+    answer_snippet_score: int = Field(default=0, ge=0, le=100, description="Content formatted for direct answers")
+
+
 class AdvancedAuditReport(BaseModel):
     """Advanced audit data for a single page."""
     url: str = Field(..., description="Page URL")
@@ -187,6 +212,7 @@ class AdvancedAuditReport(BaseModel):
     mixed_content: List[MixedContentModel] = Field(default_factory=list)
     url_structure_score: int = Field(default=100, ge=0, le=100, description="URL structure quality score")
     internal_link_score: int = Field(default=100, ge=0, le=100, description="Internal linking quality score")
+    ai_visibility: Optional[AIVisibilityReport] = Field(None, description="AI visibility score for this page")
 
 
 class SiteAdvancedAuditReport(BaseModel):
