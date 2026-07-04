@@ -56,6 +56,7 @@ from ai_seo_audit.ai_engine import (
     generate_keyword_magic,
     generate_keyword_clusters,
     get_keyword_questions,
+    test_api_connection,
 )
 
 # Page configurations
@@ -161,18 +162,53 @@ def draw_gauge(score: int):
 # Sidebar configurations
 st.sidebar.image("https://img.icons8.com/color/96/000000/artificial-intelligence.png", width=60)
 st.sidebar.title("AI SEO Platform")
-st.sidebar.caption("Audit & Optimize Content via DeepSeek AI")
+st.sidebar.caption("Audit & Optimize Content via OpenRouter AI")
 
-# Load API key from Streamlit secrets or environment variable (never hardcode in source)
-_default_key = st.secrets.get("DEEPSEEK_API_KEY", os.environ.get("DEEPSEEK_API_KEY", ""))
+# Load API key from Streamlit secrets or environment variable
+_default_key = st.secrets.get("OPENROUTER_API_KEY", os.environ.get("OPENROUTER_API_KEY", ""))
+if not _default_key:
+    _default_key = st.secrets.get("DEEPSEEK_API_KEY", os.environ.get("DEEPSEEK_API_KEY", ""))
 
-# Sidebar: API key input (user can override)
+# Sidebar: API key input
 user_api_key = st.sidebar.text_input(
-    "DeepSeek API Key",
+    "OpenRouter API Key",
     value=_default_key,
     type="password",
-    help="Enter your DeepSeek API key. Set DEEPSEEK_API_KEY in Streamlit secrets or env var to pre-fill."
+    help="Get your key at openrouter.ai/keys"
 )
+
+# Model selector
+AI_MODELS = [
+    ("deepseek/deepseek-chat", "DeepSeek Chat (Fast, Cheap)"),
+    ("deepseek/deepseek-r1", "DeepSeek R1 (Reasoning)"),
+    ("anthropic/claude-3.5-sonnet", "Claude 3.5 Sonnet"),
+    ("openai/gpt-4o", "GPT-4o"),
+    ("openai/gpt-4o-mini", "GPT-4o Mini (Fast, Cheap)"),
+    ("google/gemini-2.0-flash-001", "Gemini 2.0 Flash"),
+    ("meta-llama/llama-3.1-8b-instruct:free", "Llama 3.1 8B (Free)"),
+]
+
+selected_model = st.sidebar.selectbox(
+    "AI Model:",
+    options=[m[0] for m in AI_MODELS],
+    format_func=lambda x: next((m[1] for m in AI_MODELS if m[0] == x), x),
+    index=0,
+    key="ai_model_select"
+)
+
+# API connection test
+if user_api_key:
+    if "api_status" not in st.session_state:
+        with st.spinner("Testing API connection..."):
+            success, msg = test_api_connection(user_api_key, selected_model)
+            st.session_state.api_status = (success, msg)
+    success, msg = st.session_state.api_status
+    if success:
+        st.sidebar.success(f"✅ {msg}")
+    else:
+        st.sidebar.error(f"❌ {msg}")
+else:
+    st.sidebar.info("Enter your OpenRouter API key above")
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Crawl & Scan Limits")
@@ -228,7 +264,7 @@ if app_mode == "Keyword Research":
         if st.button("Search Keywords", type="primary", key="kw_magic_btn") and seed_keyword:
             match_type = match_filter.lower() if match_filter != "All" else "all"
             with st.spinner(f"Generating keyword ideas for '{seed_keyword}'..."):
-                kw_data = generate_keyword_magic(user_api_key, seed_keyword, match_type)
+                kw_data = generate_keyword_magic(user_api_key, seed_keyword, match_type, model=selected_model)
                 st.session_state.kw_magic_data = kw_data
                 st.session_state.kw_magic_seed = seed_keyword
 
@@ -344,7 +380,7 @@ if app_mode == "Keyword Research":
             if st.button("Generate Clusters", type="primary", key="kw_cluster_btn"):
                 with st.spinner("Clustering keywords by topic..."):
                     kw_list = [k.get("keyword", "") for k in all_kws]
-                    clusters = generate_keyword_clusters(user_api_key, kw_list, seed)
+                    clusters = generate_keyword_clusters(user_api_key, kw_list, seed, model=selected_model)
                     st.session_state.kw_clusters = clusters
 
             if "kw_clusters" in st.session_state:

@@ -69,7 +69,7 @@ def test_call_deepseek_api_success():
         # Verify it passed headers and standard model parameters
         mock_post.assert_called_once()
         args, kwargs = mock_post.call_args
-        assert kwargs["json"]["model"] == "deepseek-chat"
+        assert kwargs["json"]["model"] == "deepseek/deepseek-chat"
         assert "Bearer sk-fake-key-12345" in kwargs["headers"]["Authorization"]
 
 

@@ -1,4 +1,4 @@
-"""AI Suggestion Engine utilizing the DeepSeek API with rule-based fallback generators.
+"""AI Suggestion Engine utilizing the OpenRouter API with rule-based fallback generators.
 """
 
 from typing import List, Optional, Dict
@@ -7,17 +7,22 @@ import json
 
 from ai_seo_audit.utils import logger
 
-DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions"
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+DEFAULT_MODEL = "deepseek/deepseek-chat"
 
 
-def call_deepseek(api_key: str, prompt: str, system_prompt: Optional[str] = None) -> str:
-    """Helper method to send requests to the DeepSeek API chat completions endpoint."""
+def call_ai(api_key: str, prompt: str, system_prompt: Optional[str] = None, model: Optional[str] = None) -> str:
+    """Send requests to the OpenRouter API chat completions endpoint."""
     if not api_key or not api_key.strip():
-        raise ValueError("Missing DeepSeek API Key")
+        raise ValueError("Missing API Key")
+
+    use_model = model or DEFAULT_MODEL
 
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key.strip()}"
+        "Authorization": f"Bearer {api_key.strip()}",
+        "HTTP-Referer": "https://ai-seo-audit-platform.com",
+        "X-Title": "AI SEO Audit Platform"
     }
     
     messages = []
@@ -26,23 +31,53 @@ def call_deepseek(api_key: str, prompt: str, system_prompt: Optional[str] = None
     messages.append({"role": "user", "content": prompt})
     
     data = {
-        "model": "deepseek-chat",
+        "model": use_model,
         "messages": messages,
         "temperature": 0.3,
         "max_tokens": 1500
     }
     
     try:
-        response = requests.post(DEEPSEEK_API_URL, headers=headers, json=data, timeout=25)
+        response = requests.post(OPENROUTER_API_URL, headers=headers, json=data, timeout=30)
         if response.status_code == 200:
             res_json = response.json()
             return res_json["choices"][0]["message"]["content"].strip()
         else:
-            logger.error(f"DeepSeek API returned error code {response.status_code}: {response.text}")
+            logger.error(f"OpenRouter API returned error code {response.status_code}: {response.text}")
             raise Exception(f"API Error {response.status_code}: {response.text}")
     except Exception as e:
-        logger.error(f"Failed to fetch content from DeepSeek API: {e}")
+        logger.error(f"Failed to fetch content from OpenRouter API: {e}")
         raise e
+
+
+def test_api_connection(api_key: str, model: Optional[str] = None) -> tuple:
+    """Test the API connection. Returns (success: bool, message: str)."""
+    try:
+        use_model = model or DEFAULT_MODEL
+        result = call_ai(api_key, "Say 'connected' in one word.", model=use_model)
+        return True, f"Connected to {use_model}"
+    except ValueError:
+        return False, "No API key provided"
+    except Exception as e:
+        error_msg = str(e)
+        if "401" in error_msg:
+            return False, "Invalid API key"
+        elif "402" in error_msg:
+            return False, "Insufficient credits"
+        elif "403" in error_msg:
+            return False, "Access denied - check API key permissions"
+        elif "429" in error_msg:
+            return False, "Rate limited - try again later"
+        elif "503" in error_msg:
+            return False, "Model unavailable - try a different model"
+        else:
+            return False, f"Connection failed: {error_msg[:80]}"
+
+
+# Keep backward compatibility
+def call_deepseek(api_key: str, prompt: str, system_prompt: Optional[str] = None, model: Optional[str] = None) -> str:
+    """Backward-compatible alias for call_ai."""
+    return call_ai(api_key, prompt, system_prompt, model)
 
 
 def get_title_suggestions(api_key: Optional[str], current_title: str) -> str:
@@ -535,7 +570,8 @@ def get_competitor_keyword_analysis(
 def generate_keyword_magic(
     api_key: Optional[str],
     seed_keyword: str,
-    match_type: str = "all"
+    match_type: str = "all",
+    model: Optional[str] = None
 ) -> dict:
     """Generates a comprehensive list of keyword suggestions from a seed keyword.
 
@@ -584,7 +620,7 @@ def generate_keyword_magic(
 
     try:
         if api_key and api_key.strip():
-            result = call_deepseek(api_key, prompt, system)
+            result = call_ai(api_key, prompt, system, model=model)
             # Try to parse JSON from the response
             import re as _re
             # Find JSON object in the response
@@ -746,7 +782,8 @@ def _generate_keyword_magic_fallback(seed: str, match_type: str) -> dict:
 def generate_keyword_clusters(
     api_key: Optional[str],
     keywords: List[str],
-    seed_keyword: str
+    seed_keyword: str,
+    model: Optional[str] = None
 ) -> dict:
     """Groups keywords into topical clusters based on semantic similarity.
 
@@ -775,7 +812,7 @@ def generate_keyword_clusters(
 
     try:
         if api_key and api_key.strip():
-            result = call_deepseek(api_key, prompt, system)
+            result = call_ai(api_key, prompt, system, model=model)
             import re as _re
             json_match = _re.search(r'\{[\s\S]*\}', result)
             if json_match:
@@ -826,7 +863,8 @@ def _cluster_keywords_fallback(keywords: List[str], seed: str) -> dict:
 
 def get_keyword_questions(
     api_key: Optional[str],
-    seed_keyword: str
+    seed_keyword: str,
+    model: Optional[str] = None
 ) -> dict:
     """Generates question-based keywords people search for.
 
@@ -853,7 +891,7 @@ def get_keyword_questions(
 
     try:
         if api_key and api_key.strip():
-            result = call_deepseek(api_key, prompt, system)
+            result = call_ai(api_key, prompt, system, model=model)
             import re as _re
             json_match = _re.search(r'\{[\s\S]*\}', result)
             if json_match:
