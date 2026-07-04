@@ -53,6 +53,9 @@ from ai_seo_audit.ai_engine import (
     generate_website_search_schema,
     generate_llms_txt,
     generate_llms_full_txt,
+    generate_keyword_magic,
+    generate_keyword_clusters,
+    get_keyword_questions,
 )
 
 # Page configurations
@@ -193,160 +196,330 @@ if "report" not in st.session_state:
 # ==================== KEYWORD RESEARCH MODE ====================
 if app_mode == "Keyword Research":
     st.title("Keyword Research Tool")
-    st.write("Enter any URL to analyze its keywords, get search metrics, and discover content opportunities.")
+    st.write("Research keywords like Semrush: enter a seed keyword or URL to discover opportunities, clusters, and questions.")
 
-    kw_url_input = st.text_input(
-        "Enter URL to analyze:",
-        value="https://example.com",
-        placeholder="https://yourwebsite.com",
-        key="kw_main_url"
+    # Mode selector
+    kw_mode = st.radio(
+        "Research Mode:",
+        options=["Seed Keyword (Magic Tool)", "URL Analysis"],
+        horizontal=True,
+        key="kw_mode"
     )
 
-    if st.button("Analyze Keywords", type="primary", key="kw_main_btn"):
-        if not kw_url_input.startswith(("http://", "https://")):
-            st.error("Please enter a valid URL starting with http:// or https://")
-        else:
-            with st.spinner(f"Fetching and analyzing: {kw_url_input}"):
-                try:
-                    fetch_crawler = SafeCrawler(verify_ssl=False)
-                    crawl_result = fetch_crawler.fetch_page(kw_url_input.strip())
+    if kw_mode == "Seed Keyword (Magic Tool)":
+        st.subheader("Keyword Magic Tool")
+        st.caption("Enter a seed keyword to discover thousands of related keywords with volume, difficulty, CPC, and intent data.")
 
-                    if crawl_result and crawl_result.is_success:
-                        parser = SEOHTMLParser(html_content=crawl_result.html, base_url=crawl_result.final_url)
-                        metadata = parser.parse_metadata()
-                        links = parser.get_links()
-                        images = parser.get_images()
+        kw_col1, kw_col2 = st.columns([3, 1])
+        with kw_col1:
+            seed_keyword = st.text_input(
+                "Enter seed keyword:",
+                value="",
+                placeholder="e.g. seo audit tool",
+                key="seed_keyword_input"
+            )
+        with kw_col2:
+            match_filter = st.selectbox(
+                "Match Type:",
+                options=["All", "Broad", "Phrase", "Exact", "Related", "Questions"],
+                key="match_type_filter"
+            )
 
-                        page_auditor = SEOAuditor(check_links=False, check_images=False, timeout=5)
-                        page_report = page_auditor.audit_page(
-                            crawl_result=crawl_result,
-                            metadata=metadata,
-                            links=links,
-                            images=images,
-                            robots_txt_found=True,
-                            sitemap_xml_found=False
-                        )
+        if st.button("Search Keywords", type="primary", key="kw_magic_btn") and seed_keyword:
+            match_type = match_filter.lower() if match_filter != "All" else "all"
+            with st.spinner(f"Generating keyword ideas for '{seed_keyword}'..."):
+                kw_data = generate_keyword_magic(user_api_key, seed_keyword, match_type)
+                st.session_state.kw_magic_data = kw_data
+                st.session_state.kw_magic_seed = seed_keyword
 
-                        mini_report = WebsiteAuditReport(
-                            start_url=kw_url_input.strip(),
-                            total_pages_crawled=1,
-                            crawled_urls=[kw_url_input.strip()],
-                            pages=[page_report],
-                            site_issues=[],
-                            score=page_report.score,
-                        )
+        if "kw_magic_data" in st.session_state:
+            kw_data = st.session_state.kw_magic_data
+            seed = st.session_state.kw_magic_seed
 
-                        kw_report = extract_keywords_from_report(mini_report)
-                        st.session_state.kw_result = kw_report
-                        st.session_state.kw_metadata = metadata
-                        st.session_state.kw_page = page_report
-                        st.session_state.kw_text = (
-                            (metadata.title or "") + " " +
-                            (metadata.meta_description or "") + " " +
-                            " ".join(h.text for h in metadata.headings) + " " +
-                            " ".join(link.text for link in links[:50] if link.text)
-                        )
-                        st.success("Analysis complete!")
+            # Top metrics
+            all_kws = kw_data.get("keywords", [])
+            total_vol = sum(k.get("volume", 0) for k in all_kws)
+            avg_kd = sum(k.get("kd", 0) for k in all_kws) // len(all_kws) if all_kws else 0
+
+            m1, m2, m3, m4, m5, m6 = st.columns(6)
+            with m1:
+                st.metric("Total Keywords", len(all_kws))
+            with m2:
+                st.metric("Total Volume", f"{total_vol:,}")
+            with m3:
+                st.metric("Avg. KD", f"{avg_kd}%")
+            with m4:
+                questions = [k for k in all_kws if k.get("match_type") == "question"]
+                st.metric("Questions", len(questions))
+            with m5:
+                broad = [k for k in all_kws if k.get("match_type") == "broad"]
+                st.metric("Broad", len(broad))
+            with m6:
+                exact = [k for k in all_kws if k.get("match_type") == "exact"]
+                st.metric("Exact", len(exact))
+
+            st.markdown("---")
+
+            # Match type tabs
+            tab_all, tab_broad, tab_phrase, tab_exact, tab_related, tab_questions = st.tabs(
+                ["All Keywords", "Broad Match", "Phrase Match", "Exact Match", "Related", "Questions"]
+            )
+
+            def render_kw_table(keywords_list, show_match=True):
+                if not keywords_list:
+                    st.info("No keywords found for this filter.")
+                    return
+                table_data = []
+                for k in keywords_list:
+                    kd = k.get("kd", 0)
+                    if kd <= 29:
+                        kd_label = f"🟢 {kd}"
+                    elif kd <= 49:
+                        kd_label = f"🟡 {kd}"
+                    elif kd <= 69:
+                        kd_label = f"🟠 {kd}"
                     else:
-                        st.error(f"Could not fetch URL. Status: {crawl_result.status_code if crawl_result else 'No response'}")
-                except Exception as e:
-                    st.error(f"Error: {str(e)}")
+                        kd_label = f"🔴 {kd}"
 
-    # Display results
-    if "kw_result" in st.session_state:
-        kw = st.session_state.kw_result
-        meta = st.session_state.kw_metadata
-        pg = st.session_state.kw_page
-        full_text = st.session_state.kw_text
+                    vol = k.get("volume", 0)
+                    if vol >= 10000:
+                        vol_label = f"🔥 {vol:,}"
+                    elif vol >= 1000:
+                        vol_label = f"{vol:,}"
+                    else:
+                        vol_label = str(vol)
 
-        st.markdown("---")
-        st.markdown(f"### Keyword Analysis: `{pg.url}`")
-        st.caption(f"Page Score: {pg.score}/100 | Status: {pg.status_code}")
+                    row = {
+                        "Keyword": k.get("keyword", ""),
+                        "Volume": vol_label,
+                        "KD%": kd_label,
+                        "CPC": f"${k.get('cpc', 0):.2f}",
+                        "Competition": k.get("competition", 0),
+                        "Intent": k.get("intent", ""),
+                        "Trend": {"Rising": "📈", "Stable": "➡️", "Declining": "📉"}.get(k.get("trend", ""), ""),
+                        "SERP Features": ", ".join(k.get("serp_features", [])),
+                        "Click Potential": k.get("click_potential", ""),
+                    }
+                    if show_match:
+                        row["Match"] = k.get("match_type", "").title()
+                    table_data.append(row)
 
-        # Top metrics row
-        m1, m2, m3, m4, m5 = st.columns(5)
-        with m1:
-            st.metric("Keywords", len(kw.primary_keywords))
-        with m2:
-            st.metric("Phrases", len(kw.secondary_keywords))
-        with m3:
-            st.metric("Words Analyzed", kw.total_words_analyzed)
-        with m4:
-            top_kw = kw.primary_keywords[0].keyword if kw.primary_keywords else "-"
-            st.metric("Top Keyword", top_kw)
-        with m5:
-            st.metric("Keyword Gaps", len(kw.keyword_gaps))
+                df = pd.DataFrame(table_data)
 
-        st.markdown("---")
+                # Search filter
+                search = st.text_input("Search keywords...", "", key=f"kw_search_{hash(str(keywords_list[:3]))}")
+                if search:
+                    df = df[df["Keyword"].str.contains(search, case=False)]
 
-        # Full keyword table with Semrush-like metrics
-        st.subheader("Keyword Overview")
+                st.dataframe(df, use_container_width=True, hide_index=True)
 
-        if kw.primary_keywords or kw.secondary_keywords:
-            all_kws = kw.primary_keywords + kw.secondary_keywords
+                # Export
+                csv_data = df.to_csv(index=False)
+                st.download_button(
+                    "📥 Export to CSV",
+                    data=csv_data,
+                    file_name=f"keywords_{seed.replace(' ', '_')}.csv",
+                    mime="text/csv",
+                    key=f"export_{hash(str(keywords_list[:3]))}"
+                )
 
-            # Build detailed table like Semrush
-            kw_table_data = []
-            for k in all_kws:
-                # Calculate SEO difficulty (based on density and count)
-                if k.density >= 3.0:
-                    difficulty = "Hard"
-                    diff_color = "red"
-                elif k.density >= 1.5:
-                    difficulty = "Medium"
-                    diff_color = "orange"
-                else:
-                    difficulty = "Easy"
-                    diff_color = "green"
+            with tab_all:
+                render_kw_table(all_kws, show_match=True)
+            with tab_broad:
+                render_kw_table([k for k in all_kws if k.get("match_type") == "broad"])
+            with tab_phrase:
+                render_kw_table([k for k in all_kws if k.get("match_type") == "phrase"])
+            with tab_exact:
+                render_kw_table([k for k in all_kws if k.get("match_type") == "exact"])
+            with tab_related:
+                render_kw_table([k for k in all_kws if k.get("match_type") == "related"])
+            with tab_questions:
+                render_kw_table([k for k in all_kws if k.get("match_type") == "question"])
 
-                # Determine search intent
-                intent = "Informational"
-                if k.in_url:
-                    intent = "Navigational"
-                if any(w in k.keyword for w in ["buy", "price", "cost", "cheap", "deal", "discount", "order"]):
-                    intent = "Transactional"
-                elif any(w in k.keyword for w in ["best", "top", "review", "comparison", "vs", "alternative"]):
-                    intent = "Commercial"
+            # Keyword Clustering
+            st.markdown("---")
+            st.subheader("Keyword Clusters")
+            st.caption("Group related keywords into topical clusters for content planning.")
 
-                # Trend indicator (based on where it appears)
-                trend_score = 0
-                if k.in_title: trend_score += 2
-                if k.in_meta_desc: trend_score += 1
-                if k.in_headings: trend_score += 2
-                if k.in_url: trend_score += 1
-                trend = "Rising" if trend_score >= 4 else ("Stable" if trend_score >= 2 else "Low")
+            if st.button("Generate Clusters", type="primary", key="kw_cluster_btn"):
+                with st.spinner("Clustering keywords by topic..."):
+                    kw_list = [k.get("keyword", "") for k in all_kws]
+                    clusters = generate_keyword_clusters(user_api_key, kw_list, seed)
+                    st.session_state.kw_clusters = clusters
 
-                kw_table_data.append({
-                    "Keyword": k.keyword,
-                    "Volume": k.count,
-                    "Density %": k.density,
-                    "KD %": difficulty,
-                    "CPC $": round(k.density * 1.2 + 0.5, 2),
-                    "Competition": round(min(k.density / 5.0, 1.0), 2),
-                    "Intent": intent,
-                    "Trend": trend,
-                    "In Title": "Yes" if k.in_title else "",
-                    "In Meta": "Yes" if k.in_meta_desc else "",
-                    "In H1-H6": "Yes" if k.in_headings else "",
-                    "In URL": "Yes" if k.in_url else "",
-                    "Results": k.count * 47,
-                })
+            if "kw_clusters" in st.session_state:
+                clusters = st.session_state.kw_clusters.get("clusters", [])
+                if clusters:
+                    for cluster in clusters:
+                        with st.expander(f"📁 {cluster.get('name', 'Cluster')} ({len(cluster.get('keywords', []))} keywords)"):
+                            c1, c2, c3 = st.columns(3)
+                            with c1:
+                                st.metric("Avg Volume", f"{cluster.get('avg_volume', 0):,}")
+                            with c2:
+                                st.metric("Avg KD", f"{cluster.get('avg_kd', 0)}%")
+                            with c3:
+                                st.metric("Intent", cluster.get("recommended_intent", ""))
+                            st.write("**Keywords:**")
+                            for kw in cluster.get("keywords", []):
+                                st.write(f"- {kw}")
 
-            df_kw = pd.DataFrame(kw_table_data)
+            # Content Ideas from Keywords
+            st.markdown("---")
+            st.subheader("AI Content Ideas")
+            if st.button("Generate Content Ideas", type="primary", key="kw_ideas_magic"):
+                with st.spinner("Generating content ideas from keywords..."):
+                    existing = [k.get("keyword", "") for k in all_kws[:10]]
+                    ideas = get_content_ideas(user_api_key, f"Seed keyword: {seed}", existing)
+                    st.session_state.kw_ideas_magic = ideas
+            if "kw_ideas_magic" in st.session_state:
+                st.markdown(st.session_state.kw_ideas_magic)
 
-            # Search filter
-            kw_search = st.text_input("Search keywords...", "", key="kw_search_filter")
-            if kw_search:
-                df_kw = df_kw[df_kw["Keyword"].str.contains(kw_search, case=False)]
+    else:
+        # URL Analysis mode (existing code)
+        st.subheader("URL Analysis Mode")
+        st.caption("Enter a URL to extract keywords from the page content.")
+        kw_url_input = st.text_input(
+            "Enter URL to analyze:",
+            value="https://example.com",
+            placeholder="https://yourwebsite.com",
+            key="kw_url_input"
+        )
 
-            st.dataframe(df_kw, use_container_width=True, hide_index=True)
+        if st.button("Analyze Keywords", type="primary", key="kw_url_btn"):
+            if not kw_url_input.startswith(("http://", "https://")):
+                st.error("Please enter a valid URL starting with http:// or https://")
+            else:
+                with st.spinner(f"Fetching and analyzing: {kw_url_input}"):
+                    try:
+                        fetch_crawler = SafeCrawler(verify_ssl=False)
+                        crawl_result = fetch_crawler.fetch_page(kw_url_input.strip())
 
-            # Keyword detail section
+                        if crawl_result and crawl_result.is_success:
+                            parser = SEOHTMLParser(html_content=crawl_result.html, base_url=crawl_result.final_url)
+                            metadata = parser.parse_metadata()
+                            links = parser.get_links()
+                            images = parser.get_images()
+
+                            page_auditor = SEOAuditor(check_links=False, check_images=False, timeout=5)
+                            page_report = page_auditor.audit_page(
+                                crawl_result=crawl_result,
+                                metadata=metadata,
+                                links=links,
+                                images=images,
+                                robots_txt_found=True,
+                                sitemap_xml_found=False
+                            )
+
+                            mini_report = WebsiteAuditReport(
+                                start_url=kw_url_input.strip(),
+                                total_pages_crawled=1,
+                                crawled_urls=[kw_url_input.strip()],
+                                pages=[page_report],
+                                site_issues=[],
+                                score=page_report.score,
+                            )
+
+                            kw_report = extract_keywords_from_report(mini_report)
+                            st.session_state.kw_result = kw_report
+                            st.session_state.kw_metadata = metadata
+                            st.session_state.kw_page = page_report
+                            st.session_state.kw_text = (
+                                (metadata.title or "") + " " +
+                                (metadata.meta_description or "") + " " +
+                                " ".join(h.text for h in metadata.headings) + " " +
+                                " ".join(link.text for link in links[:50] if link.text)
+                            )
+                            st.success("Analysis complete!")
+                        else:
+                            st.error(f"Could not fetch URL. Status: {crawl_result.status_code if crawl_result else 'No response'}")
+                    except Exception as e:
+                        st.error(f"Error: {str(e)}")
+
+        # Display URL analysis results
+        if "kw_result" in st.session_state:
+            kw = st.session_state.kw_result
+            meta = st.session_state.kw_metadata
+            pg = st.session_state.kw_page
+            full_text = st.session_state.kw_text
+
+            st.markdown("---")
+            st.markdown(f"### Keyword Analysis: `{pg.url}`")
+            st.caption(f"Page Score: {pg.score}/100 | Status: {pg.status_code}")
+
+            m1, m2, m3, m4, m5 = st.columns(5)
+            with m1:
+                st.metric("Keywords", len(kw.primary_keywords))
+            with m2:
+                st.metric("Phrases", len(kw.secondary_keywords))
+            with m3:
+                st.metric("Words Analyzed", kw.total_words_analyzed)
+            with m4:
+                top_kw = kw.primary_keywords[0].keyword if kw.primary_keywords else "-"
+                st.metric("Top Keyword", top_kw)
+            with m5:
+                st.metric("Keyword Gaps", len(kw.keyword_gaps))
+
+            st.markdown("---")
+
+            st.subheader("Keyword Overview")
+            if kw.primary_keywords or kw.secondary_keywords:
+                all_kws = kw.primary_keywords + kw.secondary_keywords
+                kw_table_data = []
+                for k in all_kws:
+                    if k.density >= 3.0:
+                        difficulty = "Hard"
+                    elif k.density >= 1.5:
+                        difficulty = "Medium"
+                    else:
+                        difficulty = "Easy"
+
+                    intent = "Informational"
+                    if k.in_url:
+                        intent = "Navigational"
+                    if any(w in k.keyword for w in ["buy", "price", "cost", "cheap", "deal", "discount", "order"]):
+                        intent = "Transactional"
+                    elif any(w in k.keyword for w in ["best", "top", "review", "comparison", "vs", "alternative"]):
+                        intent = "Commercial"
+
+                    trend_score = 0
+                    if k.in_title: trend_score += 2
+                    if k.in_meta_desc: trend_score += 1
+                    if k.in_headings: trend_score += 2
+                    if k.in_url: trend_score += 1
+                    trend = "Rising" if trend_score >= 4 else ("Stable" if trend_score >= 2 else "Low")
+
+                    kw_table_data.append({
+                        "Keyword": k.keyword,
+                        "Volume": k.count,
+                        "Density %": k.density,
+                        "KD %": difficulty,
+                        "CPC $": round(k.density * 1.2 + 0.5, 2),
+                        "Competition": round(min(k.density / 5.0, 1.0), 2),
+                        "Intent": intent,
+                        "Trend": trend,
+                        "In Title": "Yes" if k.in_title else "",
+                        "In Meta": "Yes" if k.in_meta_desc else "",
+                        "In H1-H6": "Yes" if k.in_headings else "",
+                        "In URL": "Yes" if k.in_url else "",
+                        "Results": k.count * 47,
+                    })
+
+                df_kw = pd.DataFrame(kw_table_data)
+                kw_search = st.text_input("Search keywords...", "", key="kw_search_filter")
+                if kw_search:
+                    df_kw = df_kw[df_kw["Keyword"].str.contains(kw_search, case=False)]
+                st.dataframe(df_kw, use_container_width=True, hide_index=True)
+
+                # Export
+                csv_data = df_kw.to_csv(index=False)
+                st.download_button("📥 Export to CSV", data=csv_data, file_name="url_keywords.csv", mime="text/csv")
+
+            # Keyword detail view
             st.markdown("---")
             st.subheader("Keyword Detail View")
-            all_kw_names = [k.keyword for k in all_kws]
+            all_kw_names = [k.keyword for k in (kw.primary_keywords + kw.secondary_keywords)]
             sel_kw = st.selectbox("Select keyword for full analysis:", options=all_kw_names, key="kw_detail_sel")
-            kw_obj = next((k for k in all_kws if k.keyword == sel_kw), None)
+            kw_obj = next((k for k in (kw.primary_keywords + kw.secondary_keywords) if k.keyword == sel_kw), None)
 
             if kw_obj:
                 d_col1, d_col2, d_col3 = st.columns(3)
@@ -394,7 +567,6 @@ if app_mode == "Keyword Research":
             st.subheader("SERP Feature Opportunities")
             serp_features = []
             if kw.primary_keywords:
-                top = kw.primary_keywords[0].keyword
                 serp_features = [
                     {"Feature": "Featured Snippet", "Opportunity": "High" if any(k.in_headings for k in kw.primary_keywords) else "Low", "Action": "Add concise answer paragraphs under H2/H3 headings"},
                     {"Feature": "People Also Ask", "Opportunity": "High" if kw.keyword_gaps else "Medium", "Action": "Create FAQ sections targeting question keywords"},
@@ -406,29 +578,27 @@ if app_mode == "Keyword Research":
             df_serp = pd.DataFrame(serp_features)
             st.dataframe(df_serp, use_container_width=True, hide_index=True)
 
-        # AI Analysis section
-        st.markdown("---")
-        st.subheader("AI Keyword Analysis")
-        if st.button("Get AI Keyword Recommendations", type="primary", key="kw_ai_main"):
-            with st.spinner("DeepSeek AI is generating keyword strategy..."):
-                existing = [k.keyword for k in kw.primary_keywords[:10]]
-                ai_result = get_keyword_research_suggestions(user_api_key, full_text, existing)
-                st.session_state.kw_ai_result = ai_result
+            # AI Analysis
+            st.markdown("---")
+            st.subheader("AI Keyword Analysis")
+            if st.button("Get AI Keyword Recommendations", type="primary", key="kw_ai_main"):
+                with st.spinner("DeepSeek AI is generating keyword strategy..."):
+                    existing = [k.keyword for k in kw.primary_keywords[:10]]
+                    ai_result = get_keyword_research_suggestions(user_api_key, full_text, existing)
+                    st.session_state.kw_ai_result = ai_result
+            if "kw_ai_result" in st.session_state:
+                st.markdown(st.session_state.kw_ai_result)
 
-        if "kw_ai_result" in st.session_state:
-            st.markdown(st.session_state.kw_ai_result)
-
-        # Content Ideas
-        st.markdown("---")
-        st.subheader("AI Content Ideas")
-        if st.button("Generate Content Ideas", type="primary", key="kw_ideas_main"):
-            with st.spinner("Generating content ideas..."):
-                existing = [k.keyword for k in kw.primary_keywords[:10]]
-                ideas = get_content_ideas(user_api_key, full_text, existing)
-                st.session_state.kw_ideas_result = ideas
-
-        if "kw_ideas_result" in st.session_state:
-            st.markdown(st.session_state.kw_ideas_result)
+            # Content Ideas
+            st.markdown("---")
+            st.subheader("AI Content Ideas")
+            if st.button("Generate Content Ideas", type="primary", key="kw_ideas_main"):
+                with st.spinner("Generating content ideas..."):
+                    existing = [k.keyword for k in kw.primary_keywords[:10]]
+                    ideas = get_content_ideas(user_api_key, full_text, existing)
+                    st.session_state.kw_ideas_result = ideas
+            if "kw_ideas_result" in st.session_state:
+                st.markdown(st.session_state.kw_ideas_result)
 
 # ==================== SEO AUDIT MODE ====================
 else:
