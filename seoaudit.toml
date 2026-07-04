@@ -1,0 +1,20 @@
+# AI SEO Audit Toolkit Configuration
+
+[crawl]
+max_pages = 50
+max_depth = 3
+user_agent = "AI-SEO-Audit-Toolkit/1.0"
+timeout = 10
+max_size = 5242880       # 5 MB
+verify_ssl = true
+
+[audit]
+check_links = true
+check_images = true
+max_workers = 10
+
+[output]
+json_path = "reports/seo_report.json"
+html_path = "reports/seo_report.html"
+pdf_path = "reports/seo_report.pdf"
+csv_path = "reports/seo_report.csv"
