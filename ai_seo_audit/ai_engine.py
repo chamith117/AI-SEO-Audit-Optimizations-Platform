@@ -750,3 +750,332 @@ def calculate_ai_visibility_score(
         "structured_data_score": sd_score,
         "answer_snippet_score": answer_score,
     }
+
+
+# ==================== STEP-BY-STEP FIX GUIDES ====================
+
+FIX_GUIDES = {
+    "Missing Title": {
+        "title": "Fix Missing Title Tag",
+        "impact": "CRITICAL - Title is the #1 on-page SEO factor. Missing title means Google cannot understand your page.",
+        "steps": [
+            {"step": 1, "action": "Open your HTML file or CMS editor", "code": None},
+            {"step": 2, "action": "Add a <title> tag inside the <head> section", "code": "<head>\n  <title>Your Keyword-Rich Title Here</title>\n</head>"},
+            {"step": 3, "action": "Keep title between 30-65 characters", "code": None},
+            {"step": 4, "action": "Include your primary keyword near the beginning", "code": None},
+            {"step": 5, "action": "Make it unique for every page", "code": None},
+        ],
+        "example_good": "<title>AI SEO Audit Tool - Free Website Analysis | YourBrand</title>",
+        "example_bad": "<title>Home</title>",
+        "wordpress": "Go to Pages > Edit Page > Document Settings > SEO Title (Yoast) or Title Tag (RankMath)",
+        "shopify": "Go to Online Store > Pages > Edit page > SEO > Page title",
+        "webflow": "Go to Pages > Settings > SEO Settings > Title Tag",
+    },
+    "Title Length": {
+        "title": "Fix Title Tag Length",
+        "impact": "WARNING - Title too short (<30) or too long (>65) will be truncated in search results.",
+        "steps": [
+            {"step": 1, "action": "Check current title length", "code": None},
+            {"step": 2, "action": "Rewrite to be 30-65 characters", "code": None},
+            {"step": 3, "action": "Place primary keyword at the start", "code": None},
+            {"step": 4, "action": "Add brand name at the end if space allows", "code": None},
+        ],
+        "example_good": "<title>Best SEO Audit Tool 2026 - Free Online Analysis</title>",
+        "example_bad": "<title>SEO</title> (too short) or <title>This Is A Very Long Title That Will Definitely Get Truncated By Google Search Results</title> (too long)",
+    },
+    "Missing Meta Description": {
+        "title": "Fix Missing Meta Description",
+        "impact": "CRITICAL - Meta description controls your search snippet. Missing = Google generates one for you (often bad).",
+        "steps": [
+            {"step": 1, "action": "Open your HTML <head> section", "code": None},
+            {"step": 2, "action": "Add a meta description tag", "code": "<meta name=\"description\" content=\"Your compelling 120-155 character description here.\">"},
+            {"step": 3, "action": "Include primary keyword naturally", "code": None},
+            {"step": 4, "action": "Add a call-to-action (Learn more, Discover, Get started)", "code": None},
+            {"step": 5, "action": "Make each page description unique", "code": None},
+        ],
+        "example_good": "<meta name=\"description\" content=\"Free AI-powered SEO audit tool. Analyze your website for 50+ technical issues, get fix recommendations, and boost rankings. Try now.\">",
+        "example_bad": "<meta name=\"description\" content=\"\">",
+    },
+    "Meta Description Length": {
+        "title": "Fix Meta Description Length",
+        "impact": "WARNING - Description too short (<50) or too long (>160) affects click-through rate.",
+        "steps": [
+            {"step": 1, "action": "Aim for 120-155 characters (sweet spot)", "code": None},
+            {"step": 2, "action": "Include target keyword in first 100 chars", "code": None},
+            {"step": 3, "action": "Add value proposition + CTA", "code": None},
+        ],
+        "example_good": "<meta name=\"description\" content=\"Audit your website for free with AI-powered SEO analysis. Find and fix 50+ technical issues that hurt your Google rankings.\">",
+    },
+    "Missing Canonical URL": {
+        "title": "Fix Missing Canonical URL",
+        "impact": "CRITICAL - Without canonical, Google may index duplicate versions of your page, diluting ranking signals.",
+        "steps": [
+            {"step": 1, "action": "Add a canonical link tag in <head>", "code": "<link rel=\"canonical\" href=\"https://yoursite.com/page-url\">"},
+            {"step": 2, "action": "Use absolute URLs (full https://...)", "code": None},
+            {"step": 3, "action": "Self-reference: canonical should point to the same page", "code": None},
+            {"step": 4, "action": "If page has URL parameters, canonical should be the clean version", "code": None},
+        ],
+        "example_good": "<link rel=\"canonical\" href=\"https://example.com/seo-audit-tool\">",
+        "wordpress": "Yoast SEO automatically adds canonical tags. Verify at Posts > Edit > Yoast > Advanced.",
+    },
+    "Canonical Mismatch": {
+        "title": "Fix Canonical URL Mismatch",
+        "impact": "WARNING - Canonical points to a different URL than the current page.",
+        "steps": [
+            {"step": 1, "action": "Verify the canonical URL is correct", "code": None},
+            {"step": 2, "action": "For self-referencing, canonical href should match current URL", "code": None},
+            {"step": 3, "action": "If intentional (multiple URLs for same content), this is OK", "code": None},
+        ],
+    },
+    "Missing Viewport Tag": {
+        "title": "Fix Missing Mobile Viewport",
+        "impact": "CRITICAL - Without viewport, your site is NOT mobile-friendly. Google uses mobile-first indexing.",
+        "steps": [
+            {"step": 1, "action": "Add viewport meta tag in <head>", "code": "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">"},
+            {"step": 2, "action": "Test mobile-friendliness at search.google.com/test/mobile-friendly", "code": None},
+            {"step": 3, "action": "Ensure CSS uses responsive units (%, rem, vw)", "code": None},
+        ],
+        "example_good": "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">",
+        "wordpress": "Most modern themes include this. Check Appearance > Theme > mobile settings.",
+    },
+    "Missing Lang Attribute": {
+        "title": "Fix Missing HTML Lang Attribute",
+        "impact": "WARNING - Helps search engines understand your content language for proper indexing.",
+        "steps": [
+            {"step": 1, "action": "Add lang attribute to <html> tag", "code": "<html lang=\"en\">"},
+            {"step": 2, "action": "Use correct ISO 639-1 code (en, es, fr, de, etc.)", "code": None},
+        ],
+        "example_good": "<html lang=\"en\">",
+    },
+    "Missing H1 Heading": {
+        "title": "Fix Missing H1 Heading",
+        "impact": "CRITICAL - H1 tells Google what your page is about. No H1 = poor understanding.",
+        "steps": [
+            {"step": 1, "action": "Add exactly ONE H1 tag on the page", "code": "<h1>Your Primary Keyword Here</h1>"},
+            {"step": 2, "action": "Place it near the top of the content", "code": None},
+            {"step": 3, "action": "Include your primary keyword naturally", "code": None},
+            {"step": 4, "action": "Make it descriptive of the page content", "code": None},
+        ],
+        "example_good": "<h1>Free AI SEO Audit Tool - Analyze Your Website</h1>",
+    },
+    "Multiple H1 Headings": {
+        "title": "Fix Multiple H1 Headings",
+        "impact": "WARNING - Multiple H1s confuse search engines about the main topic.",
+        "steps": [
+            {"step": 1, "action": "Keep only ONE H1 (the main page title)", "code": None},
+            {"step": 2, "action": "Change extra H1s to H2", "code": "<h2>Subheading Here</h2>"},
+            {"step": 3, "action": "Follow hierarchy: H1 > H2 > H3", "code": None},
+        ],
+    },
+    "Missing Favicon": {
+        "title": "Add Missing Favicon",
+        "impact": "WARNING - Missing favicon looks unprofessional and affects brand recognition.",
+        "steps": [
+            {"step": 1, "action": "Create a 32x32 or 16x16 pixel ICO/PNG file", "code": None},
+            {"step": 2, "action": "Add favicon link tag in <head>", "code": "<link rel=\"icon\" href=\"/favicon.ico\" type=\"image/x-icon\">"},
+            {"step": 3, "action": "Place favicon.ico in your website root", "code": None},
+        ],
+    },
+    "Missing Open Graph Tags": {
+        "title": "Add Open Graph Tags",
+        "impact": "WARNING - Controls how your page appears when shared on Facebook, LinkedIn, etc.",
+        "steps": [
+            {"step": 1, "action": "Add OG tags in <head>", "code": "<meta property=\"og:title\" content=\"Your Title\">\n<meta property=\"og:description\" content=\"Your Description\">\n<meta property=\"og:image\" content=\"https://yoursite.com/image.jpg\">\n<meta property=\"og:url\" content=\"https://yoursite.com/page\">\n<meta property=\"og:type\" content=\"website\">"},
+            {"step": 2, "action": "Use an image at least 1200x630 pixels", "code": None},
+            {"step": 3, "action": "Test at developers.facebook.com/tools/debug", "code": None},
+        ],
+    },
+    "Missing Twitter Cards": {
+        "title": "Add Twitter Card Tags",
+        "impact": "WARNING - Controls how your page appears when shared on Twitter/X.",
+        "steps": [
+            {"step": 1, "action": "Add Twitter meta tags in <head>", "code": "<meta name=\"twitter:card\" content=\"summary_large_image\">\n<meta name=\"twitter:title\" content=\"Your Title\">\n<meta name=\"twitter:description\" content=\"Your Description\">\n<meta name=\"twitter:image\" content=\"https://yoursite.com/image.jpg\">"},
+            {"step": 2, "action": "Use summary_large_image for better visibility", "code": None},
+        ],
+    },
+    "Invalid JSON-LD": {
+        "title": "Fix Invalid JSON-LD Schema",
+        "impact": "CRITICAL - Invalid structured data = no rich snippets in search results.",
+        "steps": [
+            {"step": 1, "action": "Copy your JSON-LD code", "code": None},
+            {"step": 2, "action": "Validate at schema.org/validator or search.google.com/test/rich-results", "code": None},
+            {"step": 3, "action": "Fix JSON syntax errors (missing commas, quotes, brackets)", "code": None},
+            {"step": 4, "action": "Ensure @context is set to https://schema.org", "code": "<script type=\"application/ld+json\">\n{\n  \"@context\": \"https://schema.org\",\n  \"@type\": \"WebPage\",\n  \"name\": \"Your Page Name\"\n}\n</script>"},
+        ],
+    },
+    "Missing Alt Text": {
+        "title": "Add Image Alt Text",
+        "impact": "WARNING - Alt text helps Google understand images and improves accessibility.",
+        "steps": [
+            {"step": 1, "action": "Add alt attribute to every <img> tag", "code": "<img src=\"image.jpg\" alt=\"Descriptive text about the image\">"},
+            {"step": 2, "action": "Describe the image content accurately", "code": None},
+            {"step": 3, "action": "Include relevant keywords naturally", "code": None},
+            {"step": 4, "action": "Keep alt text under 125 characters", "code": None},
+        ],
+        "example_good": "<img src=\"seo-dashboard.png\" alt=\"AI SEO audit dashboard showing website score and issues\">",
+    },
+    "Broken Link": {
+        "title": "Fix Broken Link",
+        "impact": "CRITICAL (internal) / WARNING (external) - Broken links hurt user experience and crawlability.",
+        "steps": [
+            {"step": 1, "action": "Click the broken URL to verify it's actually broken", "code": None},
+            {"step": 2, "action": "For internal links: check if the page was moved or deleted", "code": None},
+            {"step": 3, "action": "Update the link to the correct URL", "code": None},
+            {"step": 4, "action": "If page was removed, add a 301 redirect or remove the link", "code": None},
+            {"step": 5, "action": "For external links: check if the site moved or is down", "code": None},
+        ],
+    },
+    "HTTPS Security": {
+        "title": "Enable HTTPS",
+        "impact": "CRITICAL - HTTP sites are flagged as 'Not Secure' in browsers and rank lower.",
+        "steps": [
+            {"step": 1, "action": "Get an SSL certificate (free from Let's Encrypt)", "code": None},
+            {"step": 2, "action": "Install the certificate on your hosting", "code": None},
+            {"step": 3, "action": "Add redirect rule in .htaccess or server config", "code": "RewriteEngine On\nRewriteCond %{HTTPS} off\nRewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]"},
+            {"step": 4, "action": "Update all internal links to use https://", "code": None},
+            {"step": 5, "action": "Update sitemap.xml with https URLs", "code": None},
+        ],
+    },
+    "Duplicate Page Content": {
+        "title": "Fix Duplicate Content",
+        "impact": "WARNING - Duplicate content confuses search engines about which page to rank.",
+        "steps": [
+            {"step": 1, "action": "Identify the canonical (main) version", "code": None},
+            {"step": 2, "action": "Add canonical tag on duplicate pages pointing to main", "code": "<link rel=\"canonical\" href=\"https://yoursite.com/main-page\">"},
+            {"step": 3, "action": "OR add 301 redirect from duplicates to main", "code": None},
+            {"step": 4, "action": "OR use noindex on duplicate pages", "code": "<meta name=\"robots\" content=\"noindex\">"},
+        ],
+    },
+    "Duplicate Page Title": {
+        "title": "Fix Duplicate Titles",
+        "impact": "WARNING - Same title on multiple pages confuses search engines.",
+        "steps": [
+            {"step": 1, "action": "Make each page title unique", "code": None},
+            {"step": 2, "action": "Include page-specific keywords", "code": None},
+            {"step": 3, "action": "Add brand name differentiator if needed", "code": None},
+        ],
+    },
+    "Orphan Pages": {
+        "title": "Fix Orphan Pages",
+        "impact": "WARNING - Pages in sitemap with no internal links pointing to them.",
+        "steps": [
+            {"step": 1, "action": "Add internal links from relevant pages", "code": None},
+            {"step": 2, "action": "Include in navigation menu if important", "code": None},
+            {"step": 3, "action": "Remove from sitemap if page is obsolete", "code": None},
+        ],
+    },
+    "Thin Content": {
+        "title": "Fix Thin Content (<300 words)",
+        "impact": "WARNING - Very thin content may be seen as low-quality by search engines.",
+        "steps": [
+            {"step": 1, "action": "Add more substantive content (aim for 800+ words)", "code": None},
+            {"step": 2, "action": "Add H2/H3 subheadings to organize content", "code": None},
+            {"step": 3, "action": "Include relevant images, videos, examples", "code": None},
+            {"step": 4, "action": "Add FAQ section with related questions", "code": None},
+        ],
+    },
+}
+
+
+def get_fix_guide_for_issue(api_key: Optional[str], issue_type: str, issue_description: str, url: str) -> str:
+    """Generates a step-by-step fix guide for a specific SEO issue."""
+    # First check our built-in fix guides
+    if issue_type in FIX_GUIDES:
+        guide = FIX_GUIDES[issue_type]
+        result = f"## {guide['title']}\n\n"
+        result += f"**Impact:** {guide['impact']}\n\n"
+        result += "### Step-by-Step Fix:\n\n"
+        for s in guide["steps"]:
+            result += f"**Step {s['step']}:** {s['action']}\n"
+            if s.get("code"):
+                result += f"```\n{s['code']}\n```\n"
+            result += "\n"
+        if "example_good" in guide:
+            result += f"**Good Example:**\n```\n{guide['example_good']}\n```\n\n"
+        if "example_bad" in guide:
+            result += f"**Bad Example:**\n```\n{guide['example_bad']}\n```\n\n"
+        if "wordpress" in guide:
+            result += f"**WordPress:** {guide['wordpress']}\n\n"
+        if "shopify" in guide:
+            result += f"**Shopify:** {guide['shopify']}\n\n"
+        if "webflow" in guide:
+            result += f"**Webflow:** {guide['webflow']}\n\n"
+        return result
+
+    # Fallback to AI for issues not in our guide
+    prompt = (
+        f"Provide a detailed step-by-step fix guide for this SEO issue:\n\n"
+        f"Issue: {issue_type}\n"
+        f"URL: {url}\n"
+        f"Description: {issue_description}\n\n"
+        f"Include:\n"
+        f"1. What this issue means\n"
+        f"2. Why it matters for SEO\n"
+        f"3. Step-by-step fix with code examples\n"
+        f"4. Platform-specific instructions (WordPress, Shopify, Webflow)\n"
+        f"5. How to verify the fix\n\n"
+        f"Make it actionable and beginner-friendly."
+    )
+    system = "You are a technical SEO mentor providing step-by-step fix instructions."
+
+    try:
+        if api_key and api_key.strip():
+            return call_deepseek(api_key, prompt, system)
+    except Exception:
+        pass
+
+    # Default fallback
+    return f"### Fix: {issue_type}\n\n**Description:** {issue_description}\n\n**Steps:**\n1. Locate the issue in your HTML/CMS\n2. Apply the recommended fix\n3. Test the change\n4. Monitor for improvements\n"
+
+
+def generate_full_fix_plan(api_key: Optional[str], issues: list) -> str:
+    """Generates a complete prioritized fix plan for all issues."""
+    if not issues:
+        return "No issues found! Your site is in great shape."
+
+    # Sort by severity
+    severity_order = {"CRITICAL": 0, "WARNING": 1, "INFO": 2}
+    sorted_issues = sorted(issues, key=lambda x: severity_order.get(x.severity, 3))
+
+    # Group by issue type
+    issue_groups = {}
+    for issue in sorted_issues:
+        if issue.issue_type not in issue_groups:
+            issue_groups[issue.issue_type] = []
+        issue_groups[issue.issue_type].append(issue)
+
+    result = "# Complete SEO Fix Plan\n\n"
+    result += f"**Total Issues:** {len(issues)} | "
+    result += f"**Critical:** {sum(1 for i in issues if i.severity == 'CRITICAL')} | "
+    result += f"**Warnings:** {sum(1 for i in issues if i.severity == 'WARNING')}\n\n"
+    result += "---\n\n"
+
+    priority = 1
+    for issue_type, group in issue_groups.items():
+        severity = group[0].severity
+        count = len(group)
+        sev_icon = "🔴" if severity == "CRITICAL" else ("🟡" if severity == "WARNING" else "🔵")
+
+        result += f"## {sev_icon} Priority {priority}: {issue_type}\n"
+        result += f"**Severity:** {severity} | **Affected Pages:** {count}\n\n"
+
+        # URLs affected
+        result += "**Affected URLs:**\n"
+        for issue in group[:5]:
+            result += f"- {issue.url}\n"
+        if count > 5:
+            result += f"- ... and {count - 5} more\n"
+        result += "\n"
+
+        # Get fix guide for this issue type
+        guide_text = get_fix_guide_for_issue(api_key, issue_type, group[0].description, group[0].url)
+        result += guide_text + "\n---\n\n"
+        priority += 1
+
+    result += "## General Best Practices\n\n"
+    result += "1. **Fix critical issues first** - They have the biggest impact on rankings\n"
+    result += "2. **Fix warnings next** - They improve overall site quality\n"
+    result += "3. **Re-audit after fixes** - Verify changes worked\n"
+    result += "4. **Monitor Google Search Console** - Track improvements over time\n"
+
+    return result
