@@ -134,6 +134,73 @@ class DuplicateGroupModel(BaseModel):
     urls: List[str] = Field(..., description="URLs sharing the exact content")
 
 
+class SecurityHeaderModel(BaseModel):
+    """Security header analysis for a page."""
+    header: str = Field(..., description="Header name")
+    present: bool = Field(..., description="Whether the header is present")
+    value: Optional[str] = Field(None, description="Header value if present")
+    severity: str = Field(default="INFO", description="CRITICAL, WARNING, or INFO")
+    description: str = Field(default="", description="What this header does")
+    recommendation: str = Field(default="", description="How to fix if missing")
+
+
+class RedirectChainModel(BaseModel):
+    """Redirect chain analysis."""
+    original_url: str = Field(..., description="Starting URL")
+    chain: List[str] = Field(default_factory=list, description="Redirect chain URLs")
+    final_url: str = Field(..., description="Final destination URL")
+    total_redirects: int = Field(default=0, description="Number of redirects")
+    is_too_long: bool = Field(default=False, description="Whether chain exceeds 3 hops")
+
+
+class ContentQualityModel(BaseModel):
+    """Content quality metrics for a page."""
+    url: str = Field(..., description="Page URL")
+    word_count: int = Field(default=0, description="Total word count")
+    character_count: int = Field(default=0, description="Total character count")
+    sentence_count: int = Field(default=0, description="Estimated sentence count")
+    avg_words_per_sentence: float = Field(default=0.0, description="Average words per sentence")
+    readability_score: str = Field(default="N/A", description="Readability grade level")
+    is_thin_content: bool = Field(default=False, description="Whether content is below 300 words")
+    heading_hierarchy_valid: bool = Field(default=True, description="Whether heading levels follow proper order")
+    internal_link_count: int = Field(default=0, description="Number of internal links")
+    external_link_count: int = Field(default=0, description="Number of external links")
+    image_count: int = Field(default=0, description="Number of images")
+    images_with_alt: int = Field(default=0, description="Images with alt text")
+    images_without_lazy: int = Field(default=0, description="Images missing lazy loading")
+
+
+class MixedContentModel(BaseModel):
+    """Mixed content issue (HTTP resource on HTTPS page)."""
+    page_url: str = Field(..., description="The HTTPS page URL")
+    resource_url: str = Field(..., description="The HTTP resource URL")
+    resource_type: str = Field(default="unknown", description="Type: script, link, img, iframe, etc.")
+    html_snippet: Optional[str] = None
+
+
+class AdvancedAuditReport(BaseModel):
+    """Advanced audit data for a single page."""
+    url: str = Field(..., description="Page URL")
+    security_headers: List[SecurityHeaderModel] = Field(default_factory=list)
+    redirect_chain: Optional[RedirectChainModel] = None
+    content_quality: Optional[ContentQualityModel] = None
+    mixed_content: List[MixedContentModel] = Field(default_factory=list)
+    url_structure_score: int = Field(default=100, ge=0, le=100, description="URL structure quality score")
+    internal_link_score: int = Field(default=100, ge=0, le=100, description="Internal linking quality score")
+
+
+class SiteAdvancedAuditReport(BaseModel):
+    """Site-wide advanced audit summary."""
+    pages: List[AdvancedAuditReport] = Field(default_factory=list)
+    total_security_issues: int = Field(default=0)
+    total_mixed_content: int = Field(default=0)
+    total_thin_content: int = Field(default=0)
+    avg_readability: str = Field(default="N/A")
+    avg_word_count: int = Field(default=0)
+    heading_hierarchy_issues: int = Field(default=0)
+    total_images_no_lazy: int = Field(default=0)
+
+
 class WebsiteAuditReport(BaseModel):
     """The master website-level SEO Audit Report."""
     start_url: str = Field(..., description="The initial domain URL audited")
@@ -149,6 +216,7 @@ class WebsiteAuditReport(BaseModel):
     robots_txt_found: bool = Field(default=False, description="Whether robots.txt was reachable")
     sitemap_xml_found: bool = Field(default=False, description="Whether sitemap.xml was reachable")
     keyword_research: Optional[KeywordResearchReport] = Field(None, description="Keyword research analysis report")
+    advanced_audit: Optional[SiteAdvancedAuditReport] = Field(None, description="Advanced audit data")
     score: int = Field(..., ge=0, le=100, description="The aggregate site SEO health score")
     generated_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),

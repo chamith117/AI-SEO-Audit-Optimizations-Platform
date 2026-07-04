@@ -15,7 +15,7 @@ import plotly.graph_objects as go
 from ai_seo_audit.crawler import SafeCrawler, SiteCrawler
 from ai_seo_audit.parser import SEOHTMLParser
 from ai_seo_audit.audit import SEOAuditor
-from ai_seo_audit.models import WebsiteAuditReport
+from ai_seo_audit.models import WebsiteAuditReport, AdvancedAuditReport, SiteAdvancedAuditReport
 from ai_seo_audit.reports import (
     export_report_to_html,
     export_report_to_pdf,
@@ -469,6 +469,7 @@ if run_btn:
 
         # Streamlit progress tracking
         progress_bar = st.progress(0.0)
+        crawl_results_stored = []
 
         for current_url, count, crawl_result, queue_size in site_crawler.crawl_site(url_input):
             pct = min(1.0, count / max_pages)
@@ -491,6 +492,7 @@ if run_btn:
                     sitemap_xml_found=(sitemap_xml_content is not None)
                 )
                 pages_audited.append(page_report)
+                crawl_results_stored.append((crawl_result, metadata, links, images))
 
         progress_bar.progress(1.0)
         status_text.info("⚙️ Running site-wide validations (links, images, duplicates)...")
@@ -508,6 +510,56 @@ if run_btn:
             robots_txt_found=robots_found,
             sitemap_xml_found=(sitemap_xml_content is not None),
             sitemap_xml_content=sitemap_xml_content
+        )
+
+        # Run advanced audit using stored crawl results
+        advanced_pages = []
+        total_sec_issues = 0
+        total_mixed = 0
+        total_thin = 0
+        total_words = 0
+        heading_issues = 0
+        total_no_lazy = 0
+        readability_scores = []
+
+        status_text.info("Running advanced audit (security, content quality, mixed content)...")
+
+        for crawl_result, metadata, links, images in crawl_results_stored:
+            adv_report = site_auditor.audit_advanced_page(
+                crawl_result=crawl_result,
+                metadata=metadata,
+                links=links,
+                images=images,
+                html_content=crawl_result.html
+            )
+            advanced_pages.append(adv_report)
+
+            # Aggregate stats
+            sec_issues = sum(1 for h in adv_report.security_headers if not h.present and h.severity in ["CRITICAL", "WARNING"])
+            total_sec_issues += sec_issues
+            total_mixed += len(adv_report.mixed_content)
+            if adv_report.content_quality:
+                total_words += adv_report.content_quality.word_count
+                if adv_report.content_quality.is_thin_content:
+                    total_thin += 1
+                if not adv_report.content_quality.heading_hierarchy_valid:
+                    heading_issues += 1
+                total_no_lazy += adv_report.content_quality.images_without_lazy
+                if adv_report.content_quality.readability_score != "N/A":
+                    readability_scores.append(adv_report.content_quality.readability_score)
+
+        avg_readability = readability_scores[0] if readability_scores else "N/A"
+        avg_word_count = total_words // len(advanced_pages) if advanced_pages else 0
+
+        website_report.advanced_audit = SiteAdvancedAuditReport(
+            pages=advanced_pages,
+            total_security_issues=total_sec_issues,
+            total_mixed_content=total_mixed,
+            total_thin_content=total_thin,
+            avg_readability=avg_readability,
+            avg_word_count=avg_word_count,
+            heading_hierarchy_issues=heading_issues,
+            total_images_no_lazy=total_no_lazy,
         )
 
         st.session_state.report = website_report
@@ -528,7 +580,7 @@ if st.session_state.report:
     info_count = total_issues - (critical_count + warning_count)
 
     # Core Navigation Tabs
-    tab_overview, tab_tech, tab_content, tab_images, tab_links, tab_perf, tab_data, tab_keywords, tab_ai = st.tabs([
+    tab_overview, tab_tech, tab_content, tab_images, tab_links, tab_perf, tab_data, tab_keywords, tab_advanced, tab_ai = st.tabs([
         "📊 Overview",
         "⚙️ Technical SEO",
         "📝 Content SEO",
@@ -537,6 +589,7 @@ if st.session_state.report:
         "⚡ Performance",
         "🗂️ Structured Data",
         "🔑 Keyword Research",
+        "🔬 Advanced Audit",
         "🧠 AI Suggestions"
     ])
 
@@ -791,7 +844,188 @@ if st.session_state.report:
                         st.code(issue.html_snippet, language="json")
                     st.info(f"**Recommendation:** {issue.recommendation}")
 
-    # 8. AI SUGGESTIONS TAB (DeepSeek API Integration)
+    # 9. ADVANCED AUDIT TAB
+    with tab_advanced:
+        st.subheader("Advanced Audit Analysis")
+        st.write("Security headers, content quality, mixed content, redirect chains, and more.")
+
+        if report.advanced_audit:
+            adv = report.advanced_audit
+
+            # Summary metrics
+            a1, a2, a3, a4, a5, a6 = st.columns(6)
+            with a1:
+                st.metric("Security Issues", adv.total_security_issues)
+            with a2:
+                st.metric("Mixed Content", adv.total_mixed_content)
+            with a3:
+                st.metric("Thin Content Pages", adv.total_thin_content)
+            with a4:
+                st.metric("Avg Words", adv.avg_word_count)
+            with a5:
+                st.metric("Heading Issues", adv.heading_hierarchy_issues)
+            with a6:
+                st.metric("Images No Lazy", adv.total_images_no_lazy)
+
+            st.markdown("---")
+
+            # Sub-tabs within Advanced Audit
+            adv_sub1, adv_sub2, adv_sub3, adv_sub4, adv_sub5 = st.tabs([
+                "Security Headers",
+                "Content Quality",
+                "Mixed Content",
+                "Redirect Chains",
+                "URL & Link Score"
+            ])
+
+            # --- Security Headers ---
+            with adv_sub1:
+                st.subheader("Security Headers Analysis")
+                st.caption("HTTP security headers protect your site from attacks. Missing headers lower security score.")
+
+                for page_adv in adv.pages:
+                    sec_issues = [h for h in page_adv.security_headers if not h.present and h.severity in ["CRITICAL", "WARNING"]]
+                    sec_ok = [h for h in page_adv.security_headers if h.present]
+
+                    with st.expander(f"🔒 {page_adv.url} ({len(sec_issues)} issues)"):
+                        if sec_ok:
+                            st.markdown("**Present:**")
+                            for h in sec_ok:
+                                st.success(f"{h.header}: `{h.value or 'Set'}`")
+
+                        if sec_issues:
+                            st.markdown("**Missing:**")
+                            for h in sec_issues:
+                                severity_color = "red" if h.severity == "CRITICAL" else "orange"
+                                st.markdown(f"**:{severity_color}[{h.severity}]** {h.header}")
+                                st.caption(h.description)
+                                st.info(f"**Fix:** {h.recommendation}")
+
+            # --- Content Quality ---
+            with adv_sub2:
+                st.subheader("Content Quality Metrics")
+                st.caption("Word count, readability, thin content, and heading hierarchy analysis.")
+
+                quality_data = []
+                for page_adv in adv.pages:
+                    if page_adv.content_quality:
+                        cq = page_adv.content_quality
+                        quality_data.append({
+                            "URL": page_adv.url,
+                            "Words": cq.word_count,
+                            "Sentences": cq.sentence_count,
+                            "Avg Words/Sentence": cq.avg_words_per_sentence,
+                            "Readability": cq.readability_score,
+                            "Thin Content": "Yes" if cq.is_thin_content else "",
+                            "Heading Hierarchy": "Valid" if cq.heading_hierarchy_valid else "Invalid",
+                            "Internal Links": cq.internal_link_count,
+                            "External Links": cq.external_link_count,
+                        })
+
+                if quality_data:
+                    st.dataframe(pd.DataFrame(quality_data), use_container_width=True, hide_index=True)
+
+                    # Content quality details per page
+                    st.markdown("---")
+                    st.markdown("#### Page Content Details")
+                    sel_page = st.selectbox("Select page:", options=[d["URL"] for d in quality_data], key="adv_content_sel")
+                    page_adv = next(p for p in adv.pages if p.url == sel_page)
+                    if page_adv.content_quality:
+                        cq = page_adv.content_quality
+                        c1, c2, c3 = st.columns(3)
+                        with c1:
+                            st.metric("Word Count", cq.word_count)
+                            st.metric("Character Count", f"{cq.character_count:,}")
+                            st.metric("Sentences", cq.sentence_count)
+                        with c2:
+                            st.metric("Avg Words/Sentence", cq.avg_words_per_sentence)
+                            st.metric("Readability", cq.readability_score)
+                            thin_status = "Thin Content" if cq.is_thin_content else "Good Length"
+                            st.metric("Content Length", thin_status)
+                        with c3:
+                            st.metric("Internal Links", cq.internal_link_count)
+                            st.metric("External Links", cq.external_link_count)
+                            st.metric("Images", cq.image_count)
+                else:
+                    st.info("No content quality data available.")
+
+            # --- Mixed Content ---
+            with adv_sub3:
+                st.subheader("Mixed Content Detection")
+                st.caption("HTTP resources loaded on HTTPS pages cause security warnings and break functionality.")
+
+                all_mixed = []
+                for page_adv in adv.pages:
+                    all_mixed.extend(page_adv.mixed_content)
+
+                if all_mixed:
+                    mixed_data = [{
+                        "Page": m.page_url,
+                        "Resource URL": m.resource_url,
+                        "Type": m.resource_type,
+                    } for m in all_mixed[:50]]
+                    st.dataframe(pd.DataFrame(mixed_data), use_container_width=True, hide_index=True)
+
+                    st.warning(f"Found {len(all_mixed)} mixed content resources. Update all HTTP resource URLs to HTTPS.")
+                else:
+                    st.success("No mixed content detected. All resources are loaded over HTTPS.")
+
+            # --- Redirect Chains ---
+            with adv_sub4:
+                st.subheader("Redirect Chain Analysis")
+                st.caption("Long redirect chains slow down crawling and user experience. Keep chains under 3 hops.")
+
+                chains = [p for p in adv.pages if p.redirect_chain]
+                if chains:
+                    for page_adv in chains:
+                        rc = page_adv.redirect_chain
+                        with st.expander(f"{'Too Long' if rc.is_too_long else 'OK'}: {rc.original_url} ({rc.total_redirects} hops)"):
+                            st.write("**Redirect Chain:**")
+                            for i, url in enumerate(rc.chain):
+                                arrow = " → " if i < len(rc.chain) - 1 else ""
+                                prefix = f"{i+1}. "
+                                if i == 0:
+                                    st.markdown(f"{prefix}**{url}** (Start)")
+                                elif i == len(rc.chain) - 1:
+                                    st.markdown(f"{prefix}**{url}** (Final)")
+                                else:
+                                    st.markdown(f"{prefix}{url}")
+                            if rc.is_too_long:
+                                st.error(f"Chain has {rc.total_redirects} redirects (max recommended: 3). Reduce redirects.")
+                            else:
+                                st.success("Redirect chain length is acceptable.")
+                else:
+                    st.success("No redirect chains detected.")
+
+            # --- URL & Link Score ---
+            with adv_sub5:
+                st.subheader("URL Structure & Internal Linking Score")
+                st.caption("Scores based on URL readability, depth, parameters, and internal link quality.")
+
+                score_data = []
+                for page_adv in adv.pages:
+                    score_data.append({
+                        "URL": page_adv.url,
+                        "URL Structure Score": page_adv.url_structure_score,
+                        "Internal Link Score": page_adv.internal_link_score,
+                    })
+
+                if score_data:
+                    df_scores = pd.DataFrame(score_data)
+                    st.dataframe(df_scores, use_container_width=True, hide_index=True)
+
+                    # Average scores
+                    avg_url = df_scores["URL Structure Score"].mean()
+                    avg_link = df_scores["Internal Link Score"].mean()
+                    col_s1, col_s2 = st.columns(2)
+                    with col_s1:
+                        st.metric("Avg URL Structure Score", f"{avg_url:.0f}/100")
+                    with col_s2:
+                        st.metric("Avg Internal Link Score", f"{avg_link:.0f}/100")
+        else:
+            st.info("Run an audit to see advanced analysis results.")
+
+    # 10. AI SUGGESTIONS TAB (DeepSeek API Integration)
     with tab_ai:
         st.subheader("🧠 DeepSeek AI Optimizations Hub")
         st.write("Extract advice, FAQs, and copywriting rewrites based on page-level content audits.")

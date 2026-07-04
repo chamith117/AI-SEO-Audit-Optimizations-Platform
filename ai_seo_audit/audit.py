@@ -18,7 +18,13 @@ from ai_seo_audit.models import (
     IssueModel,
     PageAuditReport,
     DuplicateGroupModel,
-    WebsiteAuditReport
+    WebsiteAuditReport,
+    SecurityHeaderModel,
+    RedirectChainModel,
+    ContentQualityModel,
+    MixedContentModel,
+    AdvancedAuditReport,
+    SiteAdvancedAuditReport
 )
 
 
@@ -518,3 +524,287 @@ class SEOAuditor:
                 if img.src in results_map:
                     img.status_code = results_map[img.src][0]
                     img.is_broken = results_map[img.src][1]
+
+    def audit_advanced_page(
+        self,
+        crawl_result: CrawlResult,
+        metadata: PageMetadataModel,
+        links: List[LinkModel],
+        images: List[ImageModel],
+        html_content: str
+    ) -> AdvancedAuditReport:
+        """Runs advanced page-level audits: security headers, content quality, mixed content, URL structure."""
+        url = crawl_result.final_url
+        is_https = urlparse(url).scheme.lower() == "https"
+
+        # 1. Security Headers Analysis
+        security_headers = self._analyze_security_headers(crawl_result)
+
+        # 2. Redirect Chain Analysis
+        redirect_chain = self._analyze_redirect_chain(crawl_result)
+
+        # 3. Content Quality Analysis
+        content_quality = self._analyze_content_quality(url, metadata, links, images, html_content)
+
+        # 4. Mixed Content Detection
+        mixed_content = self._detect_mixed_content(url, html_content) if is_https else []
+
+        # 5. URL Structure Score
+        url_structure_score = self._score_url_structure(url)
+
+        # 6. Internal Link Score
+        internal_link_score = self._score_internal_links(links, metadata)
+
+        return AdvancedAuditReport(
+            url=url,
+            security_headers=security_headers,
+            redirect_chain=redirect_chain,
+            content_quality=content_quality,
+            mixed_content=mixed_content,
+            url_structure_score=url_structure_score,
+            internal_link_score=internal_link_score,
+        )
+
+    def _analyze_security_headers(self, crawl_result: CrawlResult) -> List[SecurityHeaderModel]:
+        """Analyzes HTTP security headers."""
+        headers = crawl_result.headers or {}
+        results = []
+
+        # Check each security header
+        header_checks = [
+            ("Strict-Transport-Security", "HSTS", "CRITICAL",
+             "HTTP Strict Transport Security forces browsers to use HTTPS.",
+             "Add header: Strict-Transport-Security: max-age=31536000; includeSubDomains"),
+            ("X-Content-Type-Options", "X-Content-Type-Options", "WARNING",
+             "Prevents MIME type sniffing attacks.",
+             "Add header: X-Content-Type-Options: nosniff"),
+            ("X-Frame-Options", "X-Frame-Options", "WARNING",
+             "Prevents clickjacking by controlling iframe embedding.",
+             "Add header: X-Frame-Options: DENY or SAMEORIGIN"),
+            ("X-XSS-Protection", "X-XSS-Protection", "INFO",
+             "Enables browser XSS filtering.",
+             "Add header: X-XSS-Protection: 1; mode=block"),
+            ("Content-Security-Policy", "Content-Security-Policy", "WARNING",
+             "Controls which resources the browser is allowed to load.",
+             "Implement a Content-Security-Policy header restricting script and resource sources."),
+            ("Referrer-Policy", "Referrer-Policy", "INFO",
+             "Controls how much referrer information is sent with requests.",
+             "Add header: Referrer-Policy: strict-origin-when-cross-origin"),
+            ("Permissions-Policy", "Permissions-Policy", "INFO",
+             "Controls which browser features and APIs can be used.",
+             "Add a Permissions-Policy header to restrict camera, microphone, geolocation, etc."),
+        ]
+
+        for header_name, display_name, severity, desc, rec in header_checks:
+            if header_name in headers:
+                results.append(SecurityHeaderModel(
+                    header=display_name,
+                    present=True,
+                    value=headers.get(header_name),
+                    severity="INFO",
+                    description=desc,
+                    recommendation=""
+                ))
+            else:
+                results.append(SecurityHeaderModel(
+                    header=display_name,
+                    present=False,
+                    value=None,
+                    severity=severity,
+                    description=desc,
+                    recommendation=rec
+                ))
+
+        return results
+
+    def _analyze_redirect_chain(self, crawl_result: CrawlResult) -> Optional[RedirectChainModel]:
+        """Analyzes redirect chain if any."""
+        history = crawl_result.redirect_history or []
+        if not history:
+            return None
+
+        chain = list(history)
+        chain.append(crawl_result.final_url)
+        total = len(chain) - 1
+
+        return RedirectChainModel(
+            original_url=chain[0] if chain else crawl_result.final_url,
+            chain=chain,
+            final_url=crawl_result.final_url,
+            total_redirects=total,
+            is_too_long=total > 3
+        )
+
+    def _analyze_content_quality(
+        self,
+        url: str,
+        metadata: PageMetadataModel,
+        links: List[LinkModel],
+        images: List[ImageModel],
+        html_content: str
+    ) -> ContentQualityModel:
+        """Analyzes content quality metrics."""
+        # Extract text content from HTML (rough estimate)
+        import re as _re
+        text = _re.sub(r'<[^>]+>', ' ', html_content)
+        text = _re.sub(r'\s+', ' ', text).strip()
+
+        words = text.split()
+        word_count = len(words)
+        char_count = len(text)
+
+        # Sentence count (rough estimate)
+        sentences = _re.split(r'[.!?]+', text)
+        sentence_count = max(1, len([s for s in sentences if s.strip()]))
+
+        avg_words = round(word_count / sentence_count, 1) if sentence_count > 0 else 0
+
+        # Readability (Flesch-Kincaid approximation)
+        if word_count > 0 and sentence_count > 0:
+            syllables = sum(max(1, len(_re.findall(r'[aeiouy]+', w.lower()))) for w in words)
+            asl = word_count / sentence_count
+            asw = syllables / word_count
+            fk_score = 206.835 - 1.015 * asl - 84.6 * asw
+            if fk_score >= 90:
+                readability = "Very Easy (5th grade)"
+            elif fk_score >= 80:
+                readability = "Easy (6th grade)"
+            elif fk_score >= 70:
+                readability = "Fairly Easy (7th grade)"
+            elif fk_score >= 60:
+                readability = "Standard (8th-9th grade)"
+            elif fk_score >= 50:
+                readability = "Fairly Difficult (10th-12th grade)"
+            elif fk_score >= 30:
+                readability = "Difficult (College level)"
+            else:
+                readability = "Very Difficult (Graduate level)"
+        else:
+            readability = "N/A"
+            avg_words = 0
+
+        # Thin content check
+        is_thin = word_count < 300
+
+        # Heading hierarchy check
+        heading_levels = [h.level for h in metadata.headings]
+        hierarchy_valid = True
+        for i in range(1, len(heading_levels)):
+            if heading_levels[i] > heading_levels[i-1] + 1:
+                hierarchy_valid = False
+                break
+
+        # Link counts
+        internal = sum(1 for l in links if l.is_internal)
+        external = sum(1 for l in links if not l.is_internal)
+
+        # Image analysis
+        img_count = len(images)
+        img_with_alt = sum(1 for i in images if not i.is_missing_alt)
+        img_no_lazy = sum(1 for i in images if 'loading' not in (i.html_snippet or '').lower() and 'lazy' not in (i.html_snippet or '').lower())
+
+        return ContentQualityModel(
+            url=url,
+            word_count=word_count,
+            character_count=char_count,
+            sentence_count=sentence_count,
+            avg_words_per_sentence=avg_words,
+            readability_score=readability,
+            is_thin_content=is_thin,
+            heading_hierarchy_valid=hierarchy_valid,
+            internal_link_count=internal,
+            external_link_count=external,
+            image_count=img_count,
+            images_with_alt=img_with_alt,
+            images_without_lazy=img_no_lazy,
+        )
+
+    def _detect_mixed_content(self, page_url: str, html_content: str) -> List[MixedContentModel]:
+        """Detects HTTP resources loaded on HTTPS pages."""
+        import re as _re
+        issues = []
+
+        # Find HTTP resources in common tags
+        patterns = [
+            (r'src=["\']http://([^"\']+)["\']', "script/img"),
+            (r'href=["\']http://([^"\']+)["\']', "link"),
+            (r'action=["\']http://([^"\']+)["\']', "form"),
+            (r'url\(["\']?http://([^"\']\)["\']?)', "css"),
+        ]
+
+        for pattern, res_type in patterns:
+            matches = _re.findall(pattern, html_content)
+            for match in matches:
+                resource_url = f"http://{match}"
+                issues.append(MixedContentModel(
+                    page_url=page_url,
+                    resource_url=resource_url,
+                    resource_type=res_type,
+                ))
+
+        return issues[:20]  # Cap at 20 to avoid flooding
+
+    def _score_url_structure(self, url: str) -> int:
+        """Scores URL structure quality (0-100)."""
+        score = 100
+        parsed = urlparse(url)
+        path = parsed.path
+
+        # Penalize very long URLs
+        if len(url) > 100:
+            score -= 10
+        elif len(url) > 75:
+            score -= 5
+
+        # Penalize too many path segments
+        segments = [s for s in path.split("/") if s]
+        if len(segments) > 4:
+            score -= 15
+        elif len(segments) > 3:
+            score -= 5
+
+        # Penalize query parameters
+        if parsed.query:
+            score -= 10
+
+        # Penalize underscores in URL
+        if "_" in path:
+            score -= 5
+
+        # Penalize uppercase letters in path
+        if any(c.isupper() for c in path):
+            score -= 5
+
+        # Penalize URL with file extensions
+        if any(ext in path for ext in [".html", ".php", ".asp", ".jsp"]):
+            score -= 10
+
+        return max(0, score)
+
+    def _score_internal_links(self, links: List[LinkModel], metadata: PageMetadataModel) -> int:
+        """Scores internal linking quality (0-100)."""
+        score = 100
+        internal_links = [l for l in links if l.is_internal]
+        external_links = [l for l in links if not l.is_internal]
+
+        # No internal links
+        if len(internal_links) == 0:
+            score -= 30
+        elif len(internal_links) < 3:
+            score -= 10
+
+        # Too many external links relative to internal
+        if external_links and len(external_links) > len(internal_links) * 2:
+            score -= 10
+
+        # No descriptive anchor text
+        empty_anchors = sum(1 for l in internal_links if not l.text.strip() or l.text.strip().lower() in ["click here", "here", "read more", "more"])
+        if empty_anchors > 0:
+            score -= min(15, empty_anchors * 3)
+
+        # Check if H1 text appears in any link anchor
+        h1_texts = [h.text.lower() for h in metadata.headings if h.level == 1]
+        if h1_texts and not any(h1 in l.text.lower() for l in internal_links for h1 in h1_texts):
+            score -= 5
+
+        return max(0, score)
