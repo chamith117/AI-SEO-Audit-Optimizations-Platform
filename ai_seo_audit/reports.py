@@ -13,7 +13,7 @@ from ai_seo_audit.models import WebsiteAuditReport, IssueModel
 
 # ReportLab imports for PDF generation
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, KeepTogether
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
@@ -603,21 +603,12 @@ def append_pdf_issue_flowable(
     if issue.xpath:
         content.append(Paragraph(f"<b>XPath:</b> {pdf_escape(issue.xpath)}", body_style))
     if issue.html_snippet:
-        # Wrap snippet safely
         snippet = pdf_escape(issue.html_snippet)
         content.append(Paragraph(snippet, code_style))
         
     content.append(Paragraph(f"<b>Recommendation:</b> {pdf_escape(issue.recommendation)}", rec_style))
     
-    # Put inside a light gray box
-    container_table = Table([[content]], colWidths=[500])
-    container_table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#fafafa')),
-        ('PADDING', (0,0), (-1,-1), 10),
-        ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor('#e2e8f0')),
-    ]))
-    
-    story.append(container_table)
+    story.append(KeepTogether(content))
 
 
 def build_html_issue_card(issue: IssueModel) -> str:
