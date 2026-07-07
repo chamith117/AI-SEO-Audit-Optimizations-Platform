@@ -48,6 +48,22 @@ def test_cli_crawl_command_success(tmp_path):
     """
     mock_crawl_result.status_code = 200
     mock_crawl_result.final_url = "https://example.com/"
+    mock_crawl_result.redirect_history = []
+    mock_crawl_result.redirect_status_codes = []
+    mock_crawl_result.error_message = None
+    mock_crawl_result.time_to_first_byte = 100.0
+    mock_crawl_result.total_response_time = 200.0
+    mock_crawl_result.html_size_bytes = 1024
+    mock_crawl_result.compressed_size = 512
+    mock_crawl_result.crawl_depth = 0
+    mock_crawl_result.headers = {"Content-Type": "text/html"}
+    mock_crawl_result.has_redirect = False
+    mock_crawl_result.has_redirect_loop = False
+    mock_crawl_result.is_soft_404 = False
+    mock_crawl_result.x_robots_tag = None
+    mock_crawl_result.content_encoding = "gzip"
+    mock_crawl_result.compression_ratio = 50.0
+    mock_crawl_result.redirect_chain_display = ""
 
     with patch("ai_seo_audit.crawler.SiteCrawler.crawl_site") as mock_crawl:
         mock_crawl.return_value = [("https://example.com/", 1, mock_crawl_result, 0)]

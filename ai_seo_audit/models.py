@@ -13,7 +13,7 @@ class HeadingModel(BaseModel):
 
 
 class ImageModel(BaseModel):
-    """Represents an image found on the page."""
+    """Represents an image found on the page with full attribute extraction."""
     src: str = Field(..., description="The src attribute / URL of the image")
     alt: Optional[str] = Field(None, description="The alternative text of the image")
     is_missing_alt: bool = Field(..., description="Flag indicating if the ALT attribute is empty or missing")
@@ -22,15 +22,35 @@ class ImageModel(BaseModel):
     html_snippet: Optional[str] = None
     css_selector: Optional[str] = None
     xpath: Optional[str] = None
+    width: Optional[str] = Field(None, description="Width attribute value")
+    height: Optional[str] = Field(None, description="Height attribute value")
+    loading: Optional[str] = Field(None, description="Loading attribute: lazy, eager, or auto")
+    is_lazy_loaded: bool = Field(default=False, description="Whether image uses lazy loading")
+    decoding: Optional[str] = Field(None, description="Decoding attribute: async, sync, auto")
+    srcset: Optional[str] = Field(None, description="Responsive image srcset attribute")
+    sizes: Optional[str] = Field(None, description="Responsive image sizes attribute")
+    fetchpriority: Optional[str] = Field(None, description="Fetch priority hint")
+    format: Optional[str] = Field(None, description="Image format detected: webp, avif, png, jpeg, gif, svg")
+    is_next_gen_format: bool = Field(default=False, description="Whether image uses WebP or AVIF format")
+    alt_text_length: int = Field(default=0, description="Length of alt text in characters")
 
 
 class LinkModel(BaseModel):
-    """Represents an anchor link found on the page."""
+    """Represents an anchor link found on the page with full attribute extraction."""
     url: str = Field(..., description="The absolute or relative URL target of the link")
     text: str = Field(..., description="The anchor text associated with the link")
     is_internal: bool = Field(..., description="Whether the link leads to an internal resource of the site")
     status_code: Optional[int] = Field(None, description="The HTTP response status code of the link when checked")
     is_broken: Optional[bool] = Field(None, description="Flag indicating if the link is broken (non-200 or timeout)")
+    rel: Optional[str] = Field(None, description="Full rel attribute value")
+    is_nofollow: bool = Field(default=False, description="Whether link has rel=nofollow")
+    is_sponsored: bool = Field(default=False, description="Whether link has rel=sponsored")
+    is_ugc: bool = Field(default=False, description="Whether link has rel=ugc (user-generated content)")
+    target: Optional[str] = Field(None, description="Target attribute: _blank, _self, etc.")
+    is_self_referencing: bool = Field(default=False, description="Whether link points to same page")
+    is_jump_link: bool = Field(default=False, description="Whether link is hash-only (#section)")
+    anchor_text_type: Optional[str] = Field(None, description="Type: generic, brand, exact-match, partial-match, naked-url, image")
+    link_position: Optional[str] = Field(None, description="Position: content, navigation, footer, sidebar, header")
 
 
 class JSONLDModel(BaseModel):
@@ -41,6 +61,79 @@ class JSONLDModel(BaseModel):
     html_snippet: Optional[str] = None
     css_selector: Optional[str] = None
     xpath: Optional[str] = None
+    schema_type: Optional[str] = Field(None, description="The @type value: Article, Product, FAQPage, etc.")
+    schema_types: List[str] = Field(default_factory=list, description="All @type values found (including nested)")
+    required_properties_missing: List[str] = Field(default_factory=list, description="Missing required properties per schema type")
+    recommended_properties_missing: List[str] = Field(default_factory=list, description="Missing recommended properties")
+    google_rich_results_compatible: bool = Field(default=False, description="Whether it qualifies for Google rich results")
+    validation_errors: List[str] = Field(default_factory=list, description="Detailed validation errors")
+    warnings: List[str] = Field(default_factory=list, description="Non-critical warnings")
+    schema_id: Optional[str] = Field(None, description="@id value for cross-referencing")
+
+
+class HreflangModel(BaseModel):
+    """Represents an hreflang tag for internationalization."""
+    source_url: str = Field(..., description="The page containing the hreflang tag")
+    target_url: str = Field(..., description="The hreflang target URL")
+    language_code: str = Field(..., description="Language code: en, es, fr, etc.")
+    country_code: Optional[str] = Field(None, description="Country code: US, UK, etc.")
+    is_return_link_valid: Optional[bool] = Field(None, description="Whether target page has return hreflang link")
+    is_broken_target: Optional[bool] = Field(None, description="Whether hreflang target returns error")
+    is_x_default: bool = Field(default=False, description="Whether this is the x-default hreflang")
+
+
+class RobotsDirectiveModel(BaseModel):
+    """Represents a single robots directive from meta robots or x-robots-tag."""
+    directive: str = Field(..., description="Directive name: noindex, nofollow, nosnippet, etc.")
+    value: Optional[str] = Field(None, description="Directive value if any (e.g. max-snippet:50)")
+    source: str = Field(..., description="Source: meta-robots or x-robots-tag")
+
+
+class CrawlDepthModel(BaseModel):
+    """Tracks how deep a page is from the homepage."""
+    url: str = Field(..., description="Page URL")
+    depth: int = Field(..., description="Click depth from homepage (0 = homepage)")
+    is_too_deep: bool = Field(default=False, description="Whether depth exceeds 3 levels")
+
+
+class ResponseMetricsModel(BaseModel):
+    """HTTP response timing and size metrics."""
+    url: str = Field(..., description="Page URL")
+    time_to_first_byte: Optional[float] = Field(None, description="TTFB in milliseconds")
+    total_response_time: Optional[float] = Field(None, description="Total response time in milliseconds")
+    html_size_bytes: int = Field(default=0, description="HTML page size in bytes")
+    compressed_size: Optional[int] = Field(None, description="Compressed transfer size in bytes")
+    compression_ratio: Optional[float] = Field(None, description="Compression ratio percentage")
+    is_large_page: bool = Field(default=False, description="Whether page exceeds 1MB")
+
+
+class IndexabilityModel(BaseModel):
+    """Comprehensive indexability status for a page."""
+    is_indexable: bool = Field(default=True, description="Whether page can be indexed")
+    indexability_status: str = Field(default="Indexable", description="Status: Indexable, Noindex, Blocked by Robots.txt, Redirect, Canonical to non-indexable, 4xx, 5xx")
+    noindex_source: Optional[str] = Field(None, description="Source of noindex: meta-robots or x-robots-tag")
+    nofollow_detected: bool = Field(default=False, description="Whether nofollow directive is present")
+    nosnippet_detected: bool = Field(default=False, description="Whether nosnippet directive is present")
+    max_snippet: Optional[int] = Field(None, description="Max-snippet directive value")
+    max_image_preview: Optional[str] = Field(None, description="Max-image-preview directive value")
+    blocked_reason: Optional[str] = Field(None, description="Reason why page is not indexable")
+
+
+class PageLoadModel(BaseModel):
+    """Resource loading details for a page."""
+    url: str = Field(..., description="Page URL")
+    total_page_size_bytes: int = Field(default=0, description="Total page weight in bytes")
+    html_size_bytes: int = Field(default=0, description="HTML size in bytes")
+    css_count: int = Field(default=0, description="Number of CSS files")
+    js_count: int = Field(default=0, description="Number of JS files")
+    css_size_bytes: int = Field(default=0, description="Total CSS size in bytes")
+    js_size_bytes: int = Field(default=0, description="Total JS size in bytes")
+    image_count: int = Field(default=0, description="Number of images")
+    image_size_bytes: int = Field(default=0, description="Total image size in bytes")
+    third_party_count: int = Field(default=0, description="Number of third-party resources")
+    text_to_html_ratio: float = Field(default=0.0, description="Text to HTML ratio percentage")
+    inline_css_count: int = Field(default=0, description="Number of inline style blocks")
+    inline_js_count: int = Field(default=0, description="Number of inline script blocks")
 
 
 class PageMetadataModel(BaseModel):
@@ -56,13 +149,20 @@ class PageMetadataModel(BaseModel):
     meta_desc_xpath: Optional[str] = None
 
     meta_robots: Optional[str] = Field(None, description="The meta robots directive content")
+    robots_directives: List[RobotsDirectiveModel] = Field(default_factory=list, description="Parsed individual robots directives")
+    x_robots_tag_directives: List[RobotsDirectiveModel] = Field(default_factory=list, description="X-Robots-Tag header directives")
     canonical_url: Optional[str] = Field(None, description="The canonical URL link href")
     canonical_html: Optional[str] = None
     canonical_css: Optional[str] = None
     canonical_xpath: Optional[str] = None
+    canonical_is_self_ref: Optional[bool] = Field(None, description="Whether canonical points to self")
+    canonical_is_relative: Optional[bool] = Field(None, description="Whether canonical href was relative URL")
+    multiple_canonicals: bool = Field(default=False, description="Whether multiple canonical tags found")
 
     favicon_url: Optional[str] = Field(None, description="Discovered favicon target URL")
     viewport: Optional[str] = Field(None, description="The content attribute of viewport tag")
+    viewport_has_device_width: bool = Field(default=False, description="Whether viewport includes width=device-width")
+    viewport_allows_scaling: bool = Field(default=True, description="Whether viewport allows user scaling")
     lang: Optional[str] = Field(None, description="The lang attribute of the HTML tag")
     is_js_rendered: bool = Field(default=False, description="Whether page appears to be JavaScript-rendered (SPA)")
 
@@ -70,6 +170,12 @@ class PageMetadataModel(BaseModel):
     open_graph: Dict[str, str] = Field(default_factory=dict, description="Parsed Open Graph tags")
     twitter_cards: Dict[str, str] = Field(default_factory=dict, description="Parsed Twitter card tags")
     json_ld: List[JSONLDModel] = Field(default_factory=list, description="Validation of JSON-LD scripts")
+    hreflang_tags: List[HreflangModel] = Field(default_factory=list, description="Hreflang internationalization tags")
+    pagination_next: Optional[str] = Field(None, description="Pagination rel=next URL")
+    pagination_prev: Optional[str] = Field(None, description="Pagination rel=prev URL")
+    amp_url: Optional[str] = Field(None, description="AMP alternate URL")
+    http_equiv_tags: Dict[str, str] = Field(default_factory=dict, description="HTTP-EQUIV meta tags")
+    indexability: Optional[IndexabilityModel] = Field(None, description="Indexability status")
 
 
 class IssueModel(BaseModel):
@@ -94,6 +200,14 @@ class PageAuditReport(BaseModel):
     images: List[ImageModel] = Field(default_factory=list, description="All images found on this page")
     issues: List[IssueModel] = Field(default_factory=list, description="SEO issues found on this page")
     score: int = Field(..., ge=0, le=100, description="The page-level SEO score")
+    crawl_depth: int = Field(default=0, description="Click depth from homepage")
+    response_metrics: Optional[ResponseMetricsModel] = Field(None, description="HTTP response timing and size")
+    page_load: Optional[PageLoadModel] = Field(None, description="Page resource loading details")
+    hreflang_issues_count: int = Field(default=0, description="Number of hreflang issues found")
+    noindex_detected: bool = Field(default=False, description="Whether noindex directive is present")
+    soft_404_detected: bool = Field(default=False, description="Whether page appears to be soft 404")
+    is_redirect: bool = Field(default=False, description="Whether page had redirects")
+    redirect_type: Optional[str] = Field(None, description="Redirect type: 301, 302, 307, 308")
 
 
 class KeywordModel(BaseModel):
@@ -226,6 +340,21 @@ class SiteAdvancedAuditReport(BaseModel):
     avg_word_count: int = Field(default=0)
     heading_hierarchy_issues: int = Field(default=0)
     total_images_no_lazy: int = Field(default=0)
+    total_images_no_width_height: int = Field(default=0, description="Images missing width/height attributes")
+    total_images_not_next_gen: int = Field(default=0, description="Images not using WebP/AVIF format")
+    total_nofollow_links: int = Field(default=0, description="Total nofollow links found")
+    total_nofollow_internal: int = Field(default=0, description="Internal nofollow links (link equity waste)")
+    total_pages_no_indexable: int = Field(default=0, description="Pages with noindex or blocked")
+    total_soft_404: int = Field(default=0, description="Soft 404 pages detected")
+    total_redirect_chains: int = Field(default=0, description="Redirect chains found")
+    total_redirect_loops: int = Field(default=0, description="Redirect loops detected")
+    avg_response_time_ms: float = Field(default=0.0, description="Average response time in ms")
+    avg_ttfb_ms: float = Field(default=0.0, description="Average time to first byte in ms")
+    avg_page_size_kb: float = Field(default=0.0, description="Average page size in KB")
+    total_hreflang_issues: int = Field(default=0, description="Hreflang tag issues found")
+    status_distribution: Dict[int, int] = Field(default_factory=dict, description="HTTP status code distribution")
+    avg_crawl_depth: float = Field(default=0.0, description="Average crawl depth from homepage")
+    pages_too_deep: int = Field(default=0, description="Pages deeper than 3 clicks from homepage")
 
 
 class WebsiteAuditReport(BaseModel):
@@ -245,6 +374,9 @@ class WebsiteAuditReport(BaseModel):
     keyword_research: Optional[KeywordResearchReport] = Field(None, description="Keyword research analysis report")
     advanced_audit: Optional[SiteAdvancedAuditReport] = Field(None, description="Advanced audit data")
     score: int = Field(..., ge=0, le=100, description="The aggregate site SEO health score")
+    status_distribution: Dict[int, int] = Field(default_factory=dict, description="HTTP status code distribution across site")
+    avg_response_time_ms: float = Field(default=0.0, description="Average response time across site in ms")
+    total_response_time_ms: float = Field(default=0.0, description="Total crawl time in ms")
     generated_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         description="ISO 8601 UTC timestamp of the audit generation"

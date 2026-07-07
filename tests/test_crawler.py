@@ -80,5 +80,8 @@ def test_site_crawler_respects_robots():
         results = list(site_crawler.crawl_site("https://example.com/disallowed"))
         assert len(results) == 1
         assert results[0][0] == "https://example.com/disallowed"
-        # Since it is blocked, result should be None
-        assert results[0][2] is None
+        # Since it is blocked, result should indicate blocked by robots.txt
+        result = results[0][2]
+        assert result is not None
+        assert result.status_code == 0
+        assert "robots.txt" in result.error_message.lower()

@@ -47,8 +47,8 @@ def test_page_audit_warnings_and_deductions():
 
     # Assert that issues were collected
     issue_types = {issue.issue_type for issue in report.issues}
-    assert "Title Length" in issue_types
-    assert "Meta Description Length" in issue_types
+    assert "Title Too Short" in issue_types  # Title is 9 chars (under 10)
+    assert "Meta Description Too Short" in issue_types  # "Too short" is under 50 chars
     assert "Missing Viewport Tag" in issue_types
     assert "Missing Lang Attribute" in issue_types
     assert "Missing H1 Heading" in issue_types
