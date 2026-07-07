@@ -91,7 +91,7 @@ def test_export_all_formats(tmp_path, sample_website_report):
     export_report_to_html(sample_website_report, html_path)
     assert html_path.exists()
     html_text = html_path.read_text(encoding="utf-8")
-    assert "AI Website SEO Audit Dashboard" in html_text
+    assert "SEO Audit Report" in html_text
     assert "https://example.com/page1" in html_text
 
     # 4. Test PDF (ReportLab Builder)

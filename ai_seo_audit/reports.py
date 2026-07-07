@@ -76,394 +76,354 @@ def export_report_to_csv(report: WebsiteAuditReport, output_path: Union[str, Pat
 
 
 def export_report_to_html(report: WebsiteAuditReport, output_path: Union[str, Path]) -> None:
-    """Generates a premium, responsive HTML dashboard report."""
+    """Generates a comprehensive HTML report with clustered issues and step-by-step fixes."""
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Accumulate stats
-    total_issues = len(report.site_issues) + sum(len(p.issues) for p in report.pages)
-    critical_count = sum(1 for issue in report.site_issues if issue.severity == "CRITICAL") + \
-                     sum(sum(1 for i in p.issues if i.severity == "CRITICAL") for p in report.pages)
-    warning_count = sum(1 for issue in report.site_issues if issue.severity == "WARNING") + \
-                    sum(sum(1 for i in p.issues if i.severity == "WARNING") for p in report.pages)
-    
-    # Compile page rows
-    page_rows_html = ""
+    # Collect all issues
+    all_issues = list(report.site_issues)
     for p in report.pages:
-        issues_summary = f"{len(p.issues)} issues ({sum(1 for i in p.issues if i.severity == 'CRITICAL')} critical)"
-        page_rows_html += f"""
+        for issue in p.issues:
+            all_issues.append(issue)
+
+    # Stats
+    total_issues = len(all_issues)
+    critical_count = sum(1 for i in all_issues if i.severity == "CRITICAL")
+    warning_count = sum(1 for i in all_issues if i.severity == "WARNING")
+    info_count = total_issues - critical_count - warning_count
+    score = report.score
+
+    # Cluster issues by type
+    issue_clusters = {}
+    for issue in all_issues:
+        key = issue.issue_type
+        if key not in issue_clusters:
+            issue_clusters[key] = {"issues": [], "severity": issue.severity, "recommendation": issue.recommendation}
+        issue_clusters[key]["issues"].append(issue)
+
+    # Sort clusters: critical first, then warning, then info
+    severity_order = {"CRITICAL": 0, "WARNING": 1, "INFO": 2}
+    sorted_clusters = sorted(issue_clusters.items(), key=lambda x: (severity_order.get(x[1]["severity"], 3), -len(x[1]["issues"])))
+
+    # Build clustered issues HTML
+    cluster_html = ""
+    for cluster_name, data in sorted_clusters:
+        severity = data["severity"]
+        issues_list = data["issues"]
+        rec = data["recommendation"]
+        count = len(issues_list)
+
+        severity_colors = {"CRITICAL": "#ef4444", "WARNING": "#f59e0b", "INFO": "#38bdf8"}
+        severity_bg = {"CRITICAL": "rgba(239,68,68,0.08)", "WARNING": "rgba(245,158,11,0.08)", "INFO": "rgba(56,189,248,0.08)"}
+        sev_color = severity_colors.get(severity, "#94a3b8")
+        sev_bg = severity_bg.get(severity, "rgba(148,163,184,0.08)")
+
+        # Fix steps based on issue type
+        fix_steps = _get_fix_steps(cluster_name)
+
+        affected_urls = list(set(i.url for i in issues_list))
+        urls_html = ""
+        for u in affected_urls[:5]:
+            urls_html += f'<li><a href="{u}" target="_blank" style="color: #38bdf8;">{u}</a></li>'
+        if len(affected_urls) > 5:
+            urls_html += f'<li style="color: #94a3b8;">... and {len(affected_urls) - 5} more pages</li>'
+
+        cluster_html += f"""
+        <div style="background: {sev_bg}; border: 1px solid {sev_color}33; border-left: 4px solid {sev_color}; border-radius: 12px; padding: 1.5rem; margin-bottom: 2rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h3 style="margin: 0; color: {sev_color};">{_severity_icon(severity)} {cluster_name}</h3>
+                <span style="background: {sev_color}22; color: {sev_color}; padding: 0.3rem 0.8rem; border-radius: 20px; font-weight: 600; font-size: 0.85rem;">{count} affected page{"s" if count > 1 else ""}</span>
+            </div>
+            <div style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 1rem;">Severity: <strong style="color: {sev_color};">{severity}</strong></div>
+
+            <div style="background: #0f172a; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+                <strong style="color: #f1f5f9;">What this means:</strong>
+                <p style="color: #94a3b8; margin: 0.5rem 0 0 0;">{_get_issue_description(cluster_name)}</p>
+            </div>
+
+            <div style="background: #0f172a; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+                <strong style="color: #f1f5f9;">How to fix (step-by-step):</strong>
+                <ol style="color: #94a3b8; margin: 0.5rem 0 0 0; padding-left: 1.2rem;">
+                    {"".join(f'<li style="margin-bottom: 0.5rem;">{step}</li>' for step in fix_steps)}
+                </ol>
+            </div>
+
+            <div style="background: #0f172a; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+                <strong style="color: #f1f5f9;">Affected URLs ({len(affected_urls)}):</strong>
+                <ul style="margin: 0.5rem 0 0 0; padding-left: 1.2rem;">{urls_html}</ul>
+            </div>
+
+            {f'<div style="background: rgba(34,197,94,0.05); border-left: 3px solid #22c55e; padding: 0.8rem 1rem; border-radius: 0 8px 8px 0;"><strong style="color: #22c55e;">Recommendation:</strong> <span style="color: #94a3b8;">{rec}</span></div>' if rec else ''}
+        </div>
+        """
+
+    # Build page rows
+    page_rows = ""
+    for p in report.pages:
+        p_critical = sum(1 for i in p.issues if i.severity == "CRITICAL")
+        p_warning = sum(1 for i in p.issues if i.severity == "WARNING")
+        sc = "#22c55e" if p.score >= 80 else ("#f59e0b" if p.score >= 60 else "#ef4444")
+        page_rows += f"""
         <tr>
             <td><a href="{p.url}" target="_blank">{p.url}</a></td>
             <td><span class="badge status-{p.status_code}">{p.status_code}</span></td>
-            <td>{issues_summary}</td>
-            <td><strong style="color: {get_score_color_hsl(p.score)}">{p.score}/100</strong></td>
+            <td><span style="color: #ef4444;">{p_critical} critical</span>, <span style="color: #f59e0b;">{p_warning} warnings</span></td>
+            <td><strong style="color: {sc};">{p.score}/100</strong></td>
         </tr>
         """
 
-    # Compile issue cards
-    issue_cards_html = ""
-    # Global site issues first
-    for issue in report.site_issues:
-        issue_cards_html += build_html_issue_card(issue)
-    # Page-specific issues
-    for p in report.pages:
-        for issue in p.issues:
-            issue_cards_html += build_html_issue_card(issue)
+    # Health checklist
+    https_pct = sum(1 for p in report.pages if p.is_https) / max(1, len(report.pages)) * 100
+    pages_with_title = sum(1 for p in report.pages if p.metadata.title) / max(1, len(report.pages)) * 100
+    pages_with_meta = sum(1 for p in report.pages if p.metadata.meta_description) / max(1, len(report.pages)) * 100
+    pages_with_h1 = sum(1 for p in report.pages if p.metadata.headings and any(h.level == 1 for h in p.metadata.headings)) / max(1, len(report.pages)) * 100
 
-    # Overall score variables
-    score = report.score
-    score_color = get_score_color_hsl(score)
-
-    # Build keyword section if keyword research data exists
-    keyword_section_html = ""
-    if report.keyword_research:
-        kw = report.keyword_research
-        kw_rows = ""
-        for k in kw.primary_keywords[:15]:
-            kw_rows += f"""
-            <tr>
-                <td><strong>{k.keyword}</strong></td>
-                <td>{k.count}</td>
-                <td>{k.density}%</td>
-                <td>{'Yes' if k.in_title else '-'}</td>
-                <td>{'Yes' if k.in_meta_desc else '-'}</td>
-                <td>{'Yes' if k.in_headings else '-'}</td>
-                <td>{len(k.pages)}</td>
-            </tr>
-            """
-
-        lsi_rows = ""
-        for k in kw.lsi_keywords[:10]:
-            lsi_rows += f"<tr><td>{k.keyword}</td><td>{k.count}</td><td>{k.density}%</td></tr>"
-
-        gap_items = ""
-        for g in kw.keyword_gaps:
-            gap_items += f"<li><strong>{g}</strong></li>"
-
-        keyword_section_html = f"""
-        <h2>Keyword Research</h2>
-        <div class="card" style="padding: 1rem 1.5rem; margin-bottom: 2rem;">
-            <p style="color: var(--text-muted);">Total words analyzed: <strong>{kw.total_words_analyzed}</strong> | Unique words: <strong>{kw.unique_words_found}</strong></p>
-        </div>
-        <h3 style="color: var(--primary);">Primary Keywords</h3>
-        <div class="card" style="padding: 0; overflow-x: auto; margin-bottom: 2rem;">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Keyword</th>
-                        <th>Count</th>
-                        <th>Density</th>
-                        <th>In Title</th>
-                        <th>In Meta</th>
-                        <th>In Headings</th>
-                        <th>Pages</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {kw_rows}
-                </tbody>
-            </table>
-        </div>
-        <h3 style="color: var(--primary);">LSI Keywords</h3>
-        <div class="card" style="padding: 0; overflow-x: auto; margin-bottom: 2rem;">
-            <table>
-                <thead>
-                    <tr>
-                        <th>LSI Keyword</th>
-                        <th>Count</th>
-                        <th>Density</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {lsi_rows}
-                </tbody>
-            </table>
-        </div>
-        <h3 style="color: var(--primary);">Keyword Gaps</h3>
-        <div class="card" style="margin-bottom: 2rem;">
-            <ul style="list-style-type: disc; padding-left: 1.5rem; color: var(--text-muted);">
-                {gap_items}
-            </ul>
+    def _health_bar(label, pct):
+        color = "#22c55e" if pct > 90 else ("#f59e0b" if pct > 50 else "#ef4444")
+        return f"""
+        <div style="display: flex; align-items: center; margin-bottom: 0.8rem;">
+            <div style="width: 180px; color: #94a3b8;">{label}</div>
+            <div style="flex: 1; background: #1e293b; border-radius: 6px; height: 12px; margin: 0 1rem;">
+                <div style="width: {pct}%; background: {color}; height: 100%; border-radius: 6px;"></div>
+            </div>
+            <div style="width: 50px; text-align: right; color: {color}; font-weight: 600;">{pct:.0f}%</div>
         </div>
         """
+
+    health_bars = ""
+    health_bars += _health_bar("HTTPS Security", https_pct)
+    health_bars += _health_bar("robots.txt", 100 if report.robots_txt_found else 0)
+    health_bars += _health_bar("sitemap.xml", 100 if report.sitemap_xml_found else 0)
+    health_bars += _health_bar("Title Tags", pages_with_title)
+    health_bars += _health_bar("Meta Descriptions", pages_with_meta)
+    health_bars += _health_bar("H1 Tags", pages_with_h1)
+
+    # Priority action items
+    priority_items = ""
+    if critical_count > 0:
+        priority_items += f'<div style="background: rgba(239,68,68,0.1); border: 1px solid #ef4444; border-radius: 8px; padding: 1rem; margin-bottom: 0.8rem;"><strong style="color: #ef4444;">🔴 Fix {critical_count} critical issue{"s" if critical_count > 1 else ""} first</strong> — These directly impact your SEO ranking and should be fixed immediately.</div>'
+    if warning_count > 0:
+        priority_items += f'<div style="background: rgba(245,158,11,0.1); border: 1px solid #f59e0b; border-radius: 8px; padding: 1rem; margin-bottom: 0.8rem;"><strong style="color: #f59e0b;">🟡 Fix {warning_count} warning{"s" if warning_count > 1 else ""} next</strong> — These improve your SEO when fixed.</div>'
+    if not report.robots_txt_found:
+        priority_items += '<div style="background: rgba(239,68,68,0.1); border: 1px solid #ef4444; border-radius: 8px; padding: 1rem; margin-bottom: 0.8rem;"><strong style="color: #ef4444;">🔴 Create robots.txt</strong> — Missing robots.txt prevents search engines from understanding your crawl rules.</div>'
+    if not report.sitemap_xml_found:
+        priority_items += '<div style="background: rgba(245,158,11,0.1); border: 1px solid #f59e0b; border-radius: 8px; padding: 1rem; margin-bottom: 0.8rem;"><strong style="color: #f59e0b;">🟡 Create sitemap.xml</strong> — Missing sitemap helps search engines discover all your pages.</div>'
 
     html_content = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI SEO Audit Report - {report.start_url}</title>
+    <title>SEO Audit Report — {report.start_url}</title>
     <style>
-        :root {{
-            --bg-color: #0f172a;
-            --card-bg: rgba(30, 41, 59, 0.7);
-            --border-color: rgba(255, 255, 255, 0.1);
-            --text-color: #f1f5f9;
-            --text-muted: #94a3b8;
-            --primary: #38bdf8;
-            --critical: #ef4444;
-            --warning: #f59e0b;
-            --pass: #22c55e;
-        }}
-        body {{
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            font-family: 'Outfit', 'Inter', -apple-system, sans-serif;
-            margin: 0;
-            padding: 0;
-            line-height: 1.6;
-        }}
-        header {{
-            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-            padding: 2.5rem 2rem;
-            border-bottom: 1px solid var(--border-color);
-            text-align: center;
-        }}
-        header h1 {{
-            margin: 0 0 0.5rem 0;
-            font-size: 2.5rem;
-            background: linear-gradient(to right, #38bdf8, #818cf8);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }}
-        header p {{
-            margin: 0;
-            color: var(--text-muted);
-            font-size: 1.1rem;
-        }}
-        .container {{
-            max-width: 1200px;
-            margin: 2rem auto;
-            padding: 0 1.5rem;
-        }}
-        .grid-dashboard {{
-            display: grid;
-            grid-template-columns: 1fr 2fr;
-            gap: 2rem;
-            margin-bottom: 3rem;
-        }}
-        @media(max-width: 768px) {{
-            .grid-dashboard {{ grid-template-columns: 1fr; }}
-        }}
-        .card {{
-            background: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 16px;
-            padding: 2rem;
-            backdrop-filter: blur(12px);
-        }}
-        .score-circle {{
-            width: 150px;
-            height: 150px;
-            border-radius: 50%;
-            border: 10px solid #1e293b;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 2.2rem;
-            font-weight: 800;
-            margin: 1rem auto;
-            box-shadow: 0 0 30px rgba(56, 189, 248, 0.1);
-        }}
-        .score-desc {{
-            text-align: center;
-            font-size: 1.2rem;
-            font-weight: 600;
-            color: var(--text-muted);
-            margin-top: 0.5rem;
-        }}
-        .stats-grid {{
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 1.5rem;
-        }}
-        .stat-box {{
-            background: rgba(15, 23, 42, 0.6);
-            border-radius: 12px;
-            padding: 1.5rem;
-            text-align: center;
-            border: 1px solid var(--border-color);
-        }}
-        .stat-value {{
-            font-size: 2rem;
-            font-weight: 700;
-            margin-bottom: 0.2rem;
-        }}
-        .stat-label {{
-            color: var(--text-muted);
-            font-size: 0.9rem;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }}
-        h2 {{
-            border-left: 4px solid var(--primary);
-            padding-left: 10px;
-            font-size: 1.8rem;
-            margin-bottom: 1.5rem;
-        }}
-        table {{
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 2rem;
-        }}
-        th, td {{
-            padding: 1rem;
-            text-align: left;
-            border-bottom: 1px solid var(--border-color);
-        }}
-        th {{
-            background: rgba(30, 41, 59, 0.9);
-            color: var(--primary);
-            font-weight: 600;
-        }}
-        tr:hover {{
-            background: rgba(255, 255, 255, 0.02);
-        }}
-        a {{
-            color: var(--primary);
-            text-decoration: none;
-        }}
-        a:hover {{
-            text-decoration: underline;
-        }}
-        .badge {{
-            padding: 0.3rem 0.6rem;
-            border-radius: 6px;
-            font-size: 0.8rem;
-            font-weight: bold;
-        }}
-        .status-200 {{ background-color: rgba(34, 197, 94, 0.2); color: var(--pass); }}
-        .badge-severity-critical {{ background-color: rgba(239, 68, 68, 0.2); color: var(--critical); border: 1px solid var(--critical); }}
-        .badge-severity-warning {{ background-color: rgba(245, 158, 11, 0.2); color: var(--warning); border: 1px solid var(--warning); }}
-        .badge-severity-info {{ background-color: rgba(56, 189, 248, 0.2); color: var(--primary); border: 1px solid var(--primary); }}
-        .issue-card {{
-            border: 1px solid var(--border-color);
-            background: rgba(30, 41, 59, 0.4);
-            border-radius: 12px;
-            padding: 1.5rem;
-            margin-bottom: 1.5rem;
-        }}
-        .issue-header {{
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1rem;
-        }}
-        .issue-title {{
-            font-size: 1.2rem;
-            font-weight: 700;
-            margin: 0;
-        }}
-        .code-block {{
-            background: #090d16;
-            padding: 1rem;
-            border-radius: 6px;
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 0.9rem;
-            overflow-x: auto;
-            border: 1px solid var(--border-color);
-            margin: 0.8rem 0;
-        }}
-        .issue-meta {{
-            font-size: 0.85rem;
-            color: var(--text-muted);
-            margin-bottom: 0.5rem;
-        }}
-        .recommendation-box {{
-            background: rgba(34, 197, 94, 0.05);
-            border-left: 3px solid var(--pass);
-            padding: 0.8rem 1rem;
-            margin-top: 1rem;
-            border-radius: 0 6px 6px 0;
-        }}
-        .download-btn {{
-            display: inline-block;
-            background: var(--primary);
-            color: #0f172a;
-            font-weight: 700;
-            padding: 0.8rem 1.5rem;
-            border-radius: 8px;
-            margin-top: 1.5rem;
-            transition: all 0.2s ease;
-        }}
-        .download-btn:hover {{
-            opacity: 0.9;
-            transform: translateY(-1px);
-        }}
+        :root {{ --bg: #0f172a; --card: #1e293b; --border: rgba(255,255,255,0.1); --text: #f1f5f9; --muted: #94a3b8; --primary: #38bdf8; --critical: #ef4444; --warning: #f59e0b; --pass: #22c55e; }}
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+        body {{ background: var(--bg); color: var(--text); font-family: 'Inter', -apple-system, sans-serif; line-height: 1.6; }}
+        .container {{ max-width: 1100px; margin: 2rem auto; padding: 0 1.5rem; }}
+        header {{ background: linear-gradient(135deg, #1e293b, #0f172a); padding: 2.5rem; text-align: center; border-bottom: 1px solid var(--border); }}
+        header h1 {{ font-size: 2.2rem; background: linear-gradient(to right, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 0.5rem; }}
+        header p {{ color: var(--muted); }}
+        .card {{ background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; }}
+        .score-circle {{ width: 130px; height: 130px; border-radius: 50%; border: 8px solid #1e293b; display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: 800; margin: 0 auto 1rem; }}
+        .badge {{ padding: 0.2rem 0.6rem; border-radius: 6px; font-size: 0.8rem; font-weight: 600; }}
+        .status-200 {{ background: rgba(34,197,94,0.2); color: var(--pass); }}
+        table {{ width: 100%; border-collapse: collapse; }}
+        th, td {{ padding: 0.8rem; text-align: left; border-bottom: 1px solid var(--border); }}
+        th {{ background: rgba(30,41,59,0.9); color: var(--primary); font-weight: 600; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; }}
+        a {{ color: var(--primary); text-decoration: none; }}
+        a:hover {{ text-decoration: underline; }}
+        h2 {{ border-left: 4px solid var(--primary); padding-left: 12px; margin: 2rem 0 1rem; font-size: 1.5rem; }}
+        h3 {{ margin-bottom: 0.5rem; }}
+        @media print {{ body {{ background: white; color: #1e293b; }} .card {{ border: 1px solid #e2e8f0; background: white; }} header {{ background: #f8fafc; }} }}
     </style>
 </head>
 <body>
-
     <header>
-        <h1>AI Website SEO Audit Dashboard</h1>
-        <p>Target: {report.start_url} | Generated: {report.generated_at}</p>
+        <h1>SEO Audit Report</h1>
+        <p>{report.start_url} | {report.total_pages_crawled} pages crawled | Generated: {report.generated_at}</p>
     </header>
-
     <div class="container">
-        
-        <div class="grid-dashboard">
-            <div class="card">
-                <h3 style="text-align: center; margin-top: 0;" class="stat-label">Overall Health Score</h3>
-                <div class="score-circle" style="border-color: {score_color}; color: {score_color}">
-                    {score}%
-                </div>
-                <div class="score-desc">{get_score_description(score)}</div>
-                <div style="text-align: center;">
-                    <a href="javascript:window.print()" class="download-btn">Print Report</a>
-                </div>
-            </div>
 
-            <div class="card stats-grid">
-                <div class="stat-box">
-                    <div class="stat-value">{report.total_pages_crawled}</div>
-                    <div class="stat-label">Pages Crawled</div>
-                </div>
-                <div class="stat-box">
-                    <div class="stat-value" style="color: var(--critical)">{critical_count}</div>
-                    <div class="stat-label">Critical Issues</div>
-                </div>
-                <div class="stat-box">
-                    <div class="stat-value" style="color: var(--warning)">{warning_count}</div>
-                    <div class="stat-label">Warnings</div>
-                </div>
-                <div class="stat-box">
-                    <div class="stat-value" style="color: var(--primary)">{total_issues}</div>
-                    <div class="stat-label">Total Findings</div>
-                </div>
-            </div>
+        <!-- SCORE -->
+        <div style="text-align: center; margin-bottom: 2rem;">
+            <div class="score-circle" style="border-color: {get_score_color_hsl(score)}; color: {get_score_color_hsl(score)};">{score}%</div>
+            <div style="font-size: 1.2rem; font-weight: 600; color: {get_score_color_hsl(score)};">{get_score_description(score)}</div>
         </div>
 
-        <h2>Crawled Pages Summary</h2>
+        <!-- KEY METRICS -->
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 2rem;">
+            <div class="card" style="text-align: center;"><div style="font-size: 1.8rem; font-weight: 700;">{report.total_pages_crawled}</div><div style="color: var(--muted); font-size: 0.8rem; text-transform: uppercase;">Pages</div></div>
+            <div class="card" style="text-align: center;"><div style="font-size: 1.8rem; font-weight: 700; color: var(--critical);">{critical_count}</div><div style="color: var(--muted); font-size: 0.8rem; text-transform: uppercase;">Critical</div></div>
+            <div class="card" style="text-align: center;"><div style="font-size: 1.8rem; font-weight: 700; color: var(--warning);">{warning_count}</div><div style="color: var(--muted); font-size: 0.8rem; text-transform: uppercase;">Warnings</div></div>
+            <div class="card" style="text-align: center;"><div style="font-size: 1.8rem; font-weight: 700; color: var(--primary);">{total_issues}</div><div style="color: var(--muted); font-size: 0.8rem; text-transform: uppercase;">Total Issues</div></div>
+        </div>
+
+        <!-- HEALTH BARS -->
+        <div class="card">
+            <h2 style="margin-top: 0;">Site Health</h2>
+            {health_bars}
+        </div>
+
+        <!-- PRIORITY ACTIONS -->
+        <div class="card">
+            <h2 style="margin-top: 0;">Priority Actions</h2>
+            {priority_items if priority_items else '<p style="color: var(--muted);">No critical priority actions. Your site is in good shape!</p>'}
+        </div>
+
+        <!-- CLUSTERED ISSUES -->
+        <h2>Issues by Category ({len(sorted_clusters)} types, {total_issues} total)</h2>
+        {cluster_html if cluster_html else '<div class="card"><p style="color: var(--pass);">No issues found! Your site is well optimized.</p></div>'}
+
+        <!-- PAGES TABLE -->
+        <h2>All Crawled Pages</h2>
         <div class="card" style="padding: 0; overflow-x: auto;">
             <table>
-                <thead>
-                    <tr>
-                        <th>Page URL</th>
-                        <th>HTTP Status</th>
-                        <th>Issue Count</th>
-                        <th>SEO Score</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {page_rows_html}
-                </tbody>
+                <thead><tr><th>URL</th><th>Status</th><th>Issues</th><th>Score</th></tr></thead>
+                <tbody>{page_rows}</tbody>
             </table>
         </div>
 
-        <h2>Detailed Issues Log</h2>
-        <div>
-            {issue_cards_html}
-        </div>
-
-        {keyword_section_html}
-
     </div>
-
 </body>
-</html>
-"""
+</html>"""
+
     with open(path, "w", encoding="utf-8") as f:
         f.write(html_content)
+
+
+def _severity_icon(severity):
+    """Return icon for severity."""
+    return {"CRITICAL": "🔴", "WARNING": "🟡", "INFO": "🔵"}.get(severity, "⚪")
+
+
+def _get_issue_description(issue_type):
+    """Return plain-English description for issue type."""
+    descriptions = {
+        "Missing Title Tag": "Your page doesn't have a title tag. Search engines use this to understand what the page is about and display it in search results.",
+        "Missing Meta Description": "Your page doesn't have a meta description. This is the short text shown under your page in search results.",
+        "Missing H1 Heading": "Your page doesn't have an H1 heading. This is the main heading that tells search engines the primary topic of the page.",
+        "Missing Viewport Tag": "Your page doesn't have a viewport meta tag. This means it may not display correctly on mobile devices.",
+        "Missing Lang Attribute": "Your HTML tag doesn't specify a language. This helps search engines serve the right content to the right audience.",
+        "Missing Favicon": "Your page doesn't have a favicon. This is the small icon shown in browser tabs.",
+        "Missing Canonical Tag": "Your page doesn't have a canonical tag. This tells search engines which URL is the preferred version of this page.",
+        "HTTPS Security": "Some pages are not using HTTPS. Google gives preference to secure sites.",
+        "Invalid JSON-LD": "Your page has structured data (JSON-LD) that contains errors. Search engines can't read it properly.",
+        "Broken Link": "Your page contains links to URLs that don't work (404 errors). This hurts user experience and SEO.",
+        "Duplicate Content": "Multiple pages have very similar content. Search engines may not know which one to show in results.",
+        "Duplicate Titles": "Multiple pages share the same title tag. Each page should have a unique title.",
+        "Duplicate Descriptions": "Multiple pages share the same meta description. Each page should have a unique description.",
+        "Orphan Page": "This page exists in your sitemap but isn't linked from any other page on your site.",
+        "Image Missing Alt Text": "An image doesn't have alt text. Search engines can't understand what the image shows.",
+        "Empty Anchor Text": "A link has no text content. Screen readers and search engines can't understand where it goes.",
+        "Thin Content": "This page has very little content. Pages with thin content rank poorly in search results.",
+        "Missing robots.txt": "Your site doesn't have a robots.txt file. This tells search engines which pages to crawl.",
+        "Missing sitemap.xml": "Your site doesn't have a sitemap.xml. This helps search engines discover all your pages.",
+        "Heading Hierarchy Issue": "Your headings skip levels (e.g., H1 to H3 without H2). This confuses search engines.",
+        "Images Without Lazy Loading": "Images don't use lazy loading. This slows down page load time.",
+        "Mixed Content": "Your HTTPS page loads resources (images, scripts) over HTTP. This creates security warnings.",
+        "Security Header Missing": "Your site is missing important security headers that protect users.",
+    }
+    return descriptions.get(issue_type, f"This is a {issue_type} issue that needs to be addressed for better SEO performance.")
+
+
+def _get_fix_steps(issue_type):
+    """Return step-by-step fix instructions for issue type."""
+    steps = {
+        "Missing Title Tag": [
+            "Open your page's HTML file or CMS editor",
+            'Add a title tag in the &lt;head&gt; section: &lt;title&gt;Your Keyword-Rich Title&lt;/title&gt;',
+            "Keep it under 60 characters",
+            "Include your main keyword near the beginning",
+            "Save and republish the page"
+        ],
+        "Missing Meta Description": [
+            "Open your page's HTML or CMS editor",
+            'Add in the &lt;head&gt;: &lt;meta name="description" content="Your description here"&gt;',
+            "Keep it between 150-160 characters",
+            "Include your target keyword naturally",
+            "Make it compelling — this is your ad in search results"
+        ],
+        "Missing H1 Heading": [
+            "Open your page content",
+            "Add one H1 heading that describes the page topic",
+            'Use: &lt;h1&gt;Your Main Topic&lt;/h1&gt;',
+            "Include your primary keyword in the H1",
+            "Only use ONE H1 per page"
+        ],
+        "Missing Viewport Tag": [
+            "Open your page's HTML file",
+            'Add in &lt;head&gt;: &lt;meta name="viewport" content="width=device-width, initial-scale=1.0"&gt;',
+            "Save and test on mobile devices",
+            "Use Google's Mobile-Friendly Test to verify"
+        ],
+        "Missing Canonical Tag": [
+            "Open your page's HTML file",
+            'Add in &lt;head&gt;: &lt;link rel="canonical" href="https://yoursite.com/this-page"&gt;',
+            "Use the URL of the preferred version of this page",
+            "If using WordPress, most SEO plugins handle this automatically"
+        ],
+        "Invalid JSON-LD": [
+            "Copy the JSON-LD code from your page",
+            "Go to https://validator.schema.org/",
+            "Paste and validate the code",
+            "Fix any JSON syntax errors (missing commas, brackets)",
+            "Ensure @context is set to https://schema.org",
+            "Re-validate until it passes"
+        ],
+        "Broken Link": [
+            "Find the broken link on your page",
+            "Either update it to point to the correct URL",
+            "Or remove the link if the destination no longer exists",
+            "Consider adding a 301 redirect if the page moved",
+            "Check for typos in the URL"
+        ],
+        "Duplicate Content": [
+            "Choose one URL as the canonical (preferred) version",
+            "Add a canonical tag on the duplicate pages pointing to the preferred URL",
+            "OR add a 301 redirect from duplicates to the canonical",
+            "Consider merging very similar pages into one comprehensive page"
+        ],
+        "Orphan Page": [
+            "Add internal links to this page from other relevant pages",
+            "Include it in your site's navigation menu",
+            "Add it to your sitemap.xml",
+            "Link to it from related blog posts or content"
+        ],
+        "Image Missing Alt Text": [
+            "Open your page editor",
+            "Find the image tag",
+            'Add descriptive alt text: &lt;img src="..." alt="Description of image"&gt;',
+            "Describe what the image shows, include keywords naturally",
+            "Keep it under 125 characters"
+        ],
+        "Missing robots.txt": [
+            "Create a file named robots.txt in your site root",
+            "Add basic content: User-agent: * / Allow: /",
+            "Upload to https://yoursite.com/robots.txt",
+            "Test at https://www.google.com/robots.txt for examples"
+        ],
+        "Missing sitemap.xml": [
+            "Create an XML sitemap listing all your pages",
+            "Use a sitemap generator tool or SEO plugin",
+            "Upload to your site root: https://yoursite.com/sitemap.xml",
+            "Submit it to Google Search Console",
+            "Reference it in your robots.txt: Sitemap: https://yoursite.com/sitemap.xml"
+        ],
+        "Mixed Content": [
+            "Find all HTTP resources on your HTTPS page",
+            "Change all internal links from http:// to https://",
+            "Update image sources, script sources, and stylesheet links",
+            "Use protocol-relative URLs if needed: //yoursite.com/image.png",
+            "Test with a mixed content checker tool"
+        ],
+    }
+    return steps.get(issue_type, [
+        "Review the issue description to understand what needs to be fixed",
+        "Open your page in the CMS or code editor",
+        "Apply the recommended fix",
+        "Save and test the page",
+        "Re-run the audit to confirm the issue is resolved"
+    ])
 
 
 def export_report_to_pdf(report: WebsiteAuditReport, output_path: Union[str, Path]) -> None:
