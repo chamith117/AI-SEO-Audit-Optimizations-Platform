@@ -24,6 +24,7 @@ class CrawlResult:
         headers: Optional[Dict[str, str]] = None,
         final_url: str = "",
         redirect_history: Optional[List[str]] = None,
+        redirect_status_codes: Optional[List[int]] = None,
         error_message: Optional[str] = None
     ):
         self.url = url
@@ -32,12 +33,31 @@ class CrawlResult:
         self.headers = headers or {}
         self.final_url = final_url or url
         self.redirect_history = redirect_history or []
+        self.redirect_status_codes = redirect_status_codes or []
         self.error_message = error_message
 
     @property
     def is_success(self) -> bool:
         """Checks if the request completed with a 2xx status code and no errors."""
         return not self.error_message and 200 <= self.status_code < 300
+
+    @property
+    def has_redirect(self) -> bool:
+        """Check if this page had any redirects."""
+        return len(self.redirect_history) > 0
+
+    @property
+    def redirect_chain_display(self) -> str:
+        """Return a human-readable redirect chain like Screaming Frog."""
+        if not self.redirect_history:
+            return ""
+        parts = []
+        for i, url in enumerate(self.redirect_history):
+            code = self.redirect_status_codes[i] if i < len(self.redirect_status_codes) else "?"
+            parts.append(f"[{code}] {url}")
+        code = self.status_code
+        parts.append(f"[{code}] {self.final_url}")
+        return " → ".join(parts)
 
 
 # Browser-like headers to avoid bot detection
@@ -98,8 +118,9 @@ class SafeCrawler:
             final_url = response.url
             response_headers = dict(response.headers)
             
-            # Extract redirect history
+            # Extract redirect history with status codes
             redirect_history = [res.url for res in response.history]
+            redirect_status_codes = [res.status_code for res in response.history]
             
             content_type = response_headers.get("Content-Type", "")
             if "text/html" not in content_type.lower() and "application/xhtml" not in content_type.lower():
@@ -110,6 +131,7 @@ class SafeCrawler:
                     headers=response_headers,
                     final_url=final_url,
                     redirect_history=redirect_history,
+                    redirect_status_codes=redirect_status_codes,
                     error_message=f"Non-HTML content: {content_type}"
                 )
 
@@ -123,6 +145,7 @@ class SafeCrawler:
                             headers=response_headers,
                             final_url=final_url,
                             redirect_history=redirect_history,
+                    redirect_status_codes=redirect_status_codes,
                             error_message="Content length exceeds maximum limit."
                         )
                 except ValueError:
@@ -139,6 +162,7 @@ class SafeCrawler:
                             headers=response_headers,
                             final_url=final_url,
                             redirect_history=redirect_history,
+                    redirect_status_codes=redirect_status_codes,
                             error_message="Download size exceeded limit."
                         )
             
@@ -176,7 +200,8 @@ class SafeCrawler:
                         status_code=response.status_code,
                         headers=dict(response.headers),
                         final_url=response.url,
-                        redirect_history=[r.url for r in response.history]
+                        redirect_history=[r.url for r in response.history],
+                        redirect_status_codes=[r.status_code for r in response.history]
                     )
                 except Exception:
                     pass
@@ -199,7 +224,8 @@ class SafeCrawler:
                     status_code=response.status_code,
                     headers=dict(response.headers),
                     final_url=response.url,
-                    redirect_history=[r.url for r in response.history]
+                    redirect_history=[r.url for r in response.history],
+                    redirect_status_codes=[r.status_code for r in response.history]
                 )
             except Exception as ssl_err:
                 return CrawlResult(url=url, error_message=f"SSL error: {ssl_err}")
@@ -223,7 +249,8 @@ class SafeCrawler:
                         status_code=response.status_code,
                         headers=dict(response.headers),
                         final_url=response.url,
-                        redirect_history=[r.url for r in response.history]
+                        redirect_history=[r.url for r in response.history],
+                        redirect_status_codes=[r.status_code for r in response.history]
                     )
                 except Exception:
                     pass

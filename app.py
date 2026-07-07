@@ -693,6 +693,7 @@ if run_btn:
         # Streamlit progress tracking
         progress_bar = st.progress(0.0)
         crawl_results_stored = []
+        redirect_data = {}
         crawl_start_time = time.time()
 
         for current_url, count, crawl_result, queue_size in site_crawler.crawl_site(url_input):
@@ -701,12 +702,20 @@ if run_btn:
             elapsed_so_far = time.time() - crawl_start_time
             pages_per_sec = count / elapsed_so_far if elapsed_so_far > 0 else 0
             remaining = (max_pages - count) / pages_per_sec if pages_per_sec > 0 else 0
+
+            # Show redirect chain in status if present
+            redirect_info = ""
+            if crawl_result and crawl_result.has_redirect:
+                chain = crawl_result.redirect_chain_display
+                redirect_info = f"\n↪️ Redirect: {chain}"
+
             status_text.caption(
                 f"🕷️ Scanning ({count}/{max_pages}): {current_url} | "
                 f"Queue: {queue_size} | "
                 f"Elapsed: {elapsed_so_far:.0f}s | "
                 f"Speed: {pages_per_sec:.1f} pages/s | "
                 f"ETA: {remaining:.0f}s"
+                f"{redirect_info}"
             )
 
             if crawl_result and crawl_result.is_success:
@@ -726,6 +735,9 @@ if run_btn:
                 )
                 pages_audited.append(page_report)
                 crawl_results_stored.append((crawl_result, metadata, links, images))
+                # Store redirect chain data for this page
+                if crawl_result.has_redirect:
+                    redirect_data[page_report.url] = crawl_result.redirect_chain_display
 
         progress_bar.progress(1.0)
         crawl_total_time = time.time() - crawl_start_time
@@ -1005,7 +1017,8 @@ if st.session_state.report:
             "HTTP Status": p.status_code,
             "Security": "HTTPS" if p.is_https else "HTTP",
             "SEO Score": f"{p.score}/100",
-            "Issues count": len(p.issues)
+            "Issues count": len(p.issues),
+            "Redirect Chain": redirect_data.get(p.url, "")
         } for p in report.pages])
 
         search_query = st.text_input("🔍 Filter pages list by URL...", "")
