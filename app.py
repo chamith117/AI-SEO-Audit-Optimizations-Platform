@@ -1414,6 +1414,87 @@ if st.session_state.report:
             server_error_count = sum(v for k, v in status_counts.items() if 500 <= k < 600)
             st.metric("5xx Server Error", server_error_count)
 
+        # Detailed HTTP Error Types Table
+        st.markdown("##### HTTP Error Types Summary")
+        
+        # Collect all error types from issues
+        error_types = {}
+        for p in report.pages:
+            for issue in p.issues:
+                if issue.severity == "CRITICAL" or issue.severity == "WARNING":
+                    if issue.issue_type not in error_types:
+                        error_types[issue.issue_type] = {"count": 0, "severity": issue.severity, "urls": []}
+                    error_types[issue.issue_type]["count"] += 1
+                    if issue.url not in error_types[issue.issue_type]["urls"]:
+                        error_types[issue.issue_type]["urls"].append(issue.url)
+        
+        # Also count from status codes
+        status_error_types = {
+            "200 OK": sum(v for k, v in status_counts.items() if k == 200),
+            "301 Moved Permanently": sum(v for k, v in status_counts.items() if k == 301),
+            "302 Found (Redirect)": sum(v for k, v in status_counts.items() if k == 302),
+            "304 Not Modified": sum(v for k, v in status_counts.items() if k == 304),
+            "400 Bad Request": sum(v for k, v in status_counts.items() if k == 400),
+            "401 Unauthorized": sum(v for k, v in status_counts.items() if k == 401),
+            "403 Forbidden": sum(v for k, v in status_counts.items() if k == 403),
+            "404 Not Found": sum(v for k, v in status_counts.items() if k == 404),
+            "405 Method Not Allowed": sum(v for k, v in status_counts.items() if k == 405),
+            "408 Request Timeout": sum(v for k, v in status_counts.items() if k == 408),
+            "410 Gone": sum(v for k, v in status_counts.items() if k == 410),
+            "429 Too Many Requests": sum(v for k, v in status_counts.items() if k == 429),
+            "500 Internal Server Error": sum(v for k, v in status_counts.items() if k == 500),
+            "502 Bad Gateway": sum(v for k, v in status_counts.items() if k == 502),
+            "503 Service Unavailable": sum(v for k, v in status_counts.items() if k == 503),
+            "504 Gateway Timeout": sum(v for k, v in status_counts.items() if k == 504),
+        }
+        
+        # Filter to only show errors (non-zero counts)
+        error_table_data = []
+        for status_type, count in status_error_types.items():
+            if count > 0:
+                # Determine severity
+                if status_type.startswith("2"):
+                    severity = "OK"
+                    color = "green"
+                elif status_type.startswith("3"):
+                    severity = "Redirect"
+                    color = "orange"
+                elif status_type.startswith("4"):
+                    severity = "Error"
+                    color = "red"
+                else:
+                    severity = "Critical"
+                    color = "red"
+                
+                error_table_data.append({
+                    "HTTP Status": status_type,
+                    "Count": count,
+                    "Severity": severity
+                })
+        
+        # Add issue-based error types
+        for issue_type in ["Soft 404 Detected", "Server Error (5xx)", "404 Page Not Found", 
+                          "403 Forbidden", "Other Client Error (4xx)", "Broken Link", "Broken Image"]:
+            if issue_type in error_types:
+                error_table_data.append({
+                    "HTTP Status": issue_type,
+                    "Count": error_types[issue_type]["count"],
+                    "Severity": error_types[issue_type]["severity"]
+                })
+        
+        if error_table_data:
+            df_errors = pd.DataFrame(error_table_data)
+            st.dataframe(df_errors, use_container_width=True, hide_index=True)
+            
+            # Summary
+            total_errors = sum(d["Count"] for d in error_table_data if d["Severity"] in ["Error", "Critical"])
+            if total_errors > 0:
+                st.warning(f"**Total HTTP Errors: {total_errors}** - These issues should be fixed immediately.")
+            else:
+                st.success("No HTTP errors detected.")
+        else:
+            st.info("No HTTP status data available.")
+
         # Status code distribution chart
         if status_counts:
             with st.expander("View Status Code Distribution"):
