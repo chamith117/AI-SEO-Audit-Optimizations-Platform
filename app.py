@@ -819,6 +819,7 @@ if run_btn:
         )
 
         st.session_state.report = website_report
+        st.session_state.redirect_data = redirect_data
         status_text.empty()
         progress_bar.empty()
         st.success("✅ Audit complete! Scroll down to view your dashboard.")
@@ -826,6 +827,7 @@ if run_btn:
 # If report is loaded, show the dashboard
 if st.session_state.report:
     report: WebsiteAuditReport = st.session_state.report
+    redirect_data = st.session_state.get("redirect_data", {})
     
     # Pre-collect stats
     total_issues = len(report.site_issues) + sum(len(p.issues) for p in report.pages)
