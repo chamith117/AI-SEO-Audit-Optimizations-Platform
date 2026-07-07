@@ -9,7 +9,7 @@ from ai_seo_audit.crawler import SafeCrawler, SiteCrawler, CrawlResult
 
 def test_fetch_page_success_with_redirects():
     """Tests that redirects are correctly recorded in the crawl results."""
-    with patch("requests.get") as mock_get:
+    with patch("requests.Session.get") as mock_get:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.url = "https://example.com/target"
