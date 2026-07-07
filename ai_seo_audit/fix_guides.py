@@ -1556,8 +1556,13 @@ def get_all_fix_guides() -> Dict[str, FixGuide]:
     return FIX_GUIDES
 
 
-def get_fix_guide_as_markdown(issue_type: str) -> str:
-    """Get a fix guide formatted as Markdown for display."""
+def get_fix_guide_as_markdown(issue_type: str, cms: Optional[str] = None) -> str:
+    """Get a fix guide formatted as Markdown for display.
+    
+    Args:
+        issue_type: The type of issue to get the guide for
+        cms: Optional CMS platform (wordpress, shopify, wix, squarespace) for CMS-specific instructions
+    """
     guide = FIX_GUIDES.get(issue_type)
     if not guide:
         return f"No fix guide available for issue type: {issue_type}"
@@ -1577,10 +1582,16 @@ def get_fix_guide_as_markdown(issue_type: str) -> str:
             md += f"\n**{name}:**\n```\n{code}\n```\n"
         md += "\n"
 
-    if guide.cms_guides:
+    # Show CMS-specific guide if provided, otherwise show all
+    if cms and cms in guide.cms_guides:
+        md += f"### CMS-Specific Instructions ({cms.title()})\n"
+        for step in guide.cms_guides[cms]:
+            md += f"- {step}\n"
+        md += "\n"
+    elif guide.cms_guides:
         md += "### CMS-Specific Instructions\n"
-        for cms, steps in guide.cms_guides.items():
-            md += f"\n**{cms}:**\n"
+        for cms_name, steps in guide.cms_guides.items():
+            md += f"\n**{cms_name.title()}:**\n"
             for step in steps:
                 md += f"- {step}\n"
         md += "\n"

@@ -26,7 +26,7 @@ from ai_seo_audit.keyword_research import (
     extract_keywords_from_report,
     get_page_text_content,
 )
-from ai_seo_audit.fix_guides import get_fix_guide, get_all_fix_guides, FIX_GUIDES
+from ai_seo_audit.fix_guides import get_fix_guide, get_fix_guide_as_markdown, get_all_fix_guides, FIX_GUIDES
 from ai_seo_audit.ai_engine import (
     get_title_suggestions,
     get_meta_desc_suggestions,
@@ -2075,7 +2075,7 @@ if st.session_state.report:
                 st.info(f"Found on **{len(affected)}** page(s)")
 
                 # Get the comprehensive guide
-                guide_content = get_fix_guide(selected_fix_type, cms=cms_platform)
+                guide_content = get_fix_guide_as_markdown(selected_fix_type, cms=cms_platform)
                 st.markdown(guide_content)
 
                 # Show affected URLs with details
