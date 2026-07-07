@@ -1169,7 +1169,7 @@ if st.session_state.report:
     # 2. TECHNICAL SEO TAB
     with tab_tech:
         st.subheader("Host & Protocol Audits")
-        
+
         col_t1, col_t2, col_t3 = st.columns(3)
         with col_t1:
             st.checkbox("HTTPS Secure Server", value=all(p.is_https for p in report.pages), disabled=True)
@@ -1179,27 +1179,164 @@ if st.session_state.report:
             st.checkbox("sitemap.xml Detected", value=report.sitemap_xml_found, disabled=True)
 
         st.write("")
+
+        # --- Site-Level Technical Summary ---
+        st.subheader("Site-Level Technical Summary")
+        tech_col1, tech_col2, tech_col3, tech_col4 = st.columns(4)
+        with tech_col1:
+            st.metric("Orphan Pages", len(report.orphan_pages))
+        with tech_col2:
+            st.metric("Duplicate Titles", len(report.duplicate_titles))
+        with tech_col3:
+            st.metric("Duplicate Metas", len(report.duplicate_descriptions))
+        with tech_col4:
+            st.metric("Duplicate Content", len(report.duplicate_pages))
+
+        # Redirect chains
+        st.metric("Redirect Chains", len(report.redirect_chains))
+        if report.redirect_chains:
+            with st.expander("View Redirect Chains"):
+                for redir_url, chain in list(report.redirect_chains.items())[:10]:
+                    st.write(f"**{redir_url}**")
+                    st.caption(" → ".join(chain))
+
+        # Orphan pages
+        if report.orphan_pages:
+            with st.expander(f"View {len(report.orphan_pages)} Orphan Page(s)"):
+                for op in report.orphan_pages:
+                    st.write(f"- {op}")
+
+        # Duplicate titles
+        if report.duplicate_titles:
+            with st.expander(f"View {len(report.duplicate_titles)} Duplicate Title Group(s)"):
+                for title, urls in report.duplicate_titles.items():
+                    st.write(f"**Title:** {title}")
+                    for u in urls:
+                        st.write(f"  - {u}")
+
+        # Duplicate descriptions
+        if report.duplicate_descriptions:
+            with st.expander(f"View {len(report.duplicate_descriptions)} Duplicate Meta Description Group(s)"):
+                for desc, urls in report.duplicate_descriptions.items():
+                    st.write(f"**Description:** {desc[:100]}...")
+                    for u in urls:
+                        st.write(f"  - {u}")
+
+        st.write("")
         st.subheader("Technical Issues Log")
-        
-        # Filter details
+
+        # --- Page-Level Technical Issues ---
+        # Comprehensive list of all technical SEO issue types
+        TECHNICAL_ISSUE_TYPES = [
+            "HTTPS Security",
+            "Missing Canonical URL",
+            "Canonical Mismatch",
+            "Missing Viewport Tag",
+            "Missing Lang Attribute",
+            "Missing Favicon",
+            "Missing H1 Heading",
+            "Multiple H1 Headings",
+            "Invalid JSON-LD",
+            "Missing Open Graph Tags",
+            "Missing Twitter Cards",
+            "Missing Title",
+            "Title Length",
+            "Missing Meta Description",
+            "Meta Description Length",
+            "Missing Alt Text",
+            "Broken Link",
+            "Broken Image",
+        ]
+
         tech_issues = []
+        # Include site-level orphan issues
         for issue in report.site_issues:
-            if issue.issue_type in ("HTTPS Security", "robots.txt Availability", "Sitemap XML Availability", "Orphan Pages"):
+            if issue.issue_type == "Orphan Pages":
                 tech_issues.append(issue)
+        # Include page-level technical issues
         for p in report.pages:
             for issue in p.issues:
-                if issue.issue_type in ("HTTPS Security", "Missing Viewport Tag", "Missing Lang Attribute", "Missing Favicon"):
+                if issue.issue_type in TECHNICAL_ISSUE_TYPES:
                     tech_issues.append(issue)
 
-        if not tech_issues:
+        # Count by severity
+        tech_critical = sum(1 for i in tech_issues if i.severity == "CRITICAL")
+        tech_warning = sum(1 for i in tech_issues if i.severity == "WARNING")
+        tech_info = len(tech_issues) - tech_critical - tech_warning
+
+        tc1, tc2, tc3, tc4 = st.columns(4)
+        with tc1:
+            st.metric("Total Technical Issues", len(tech_issues))
+        with tc2:
+            st.metric("Critical", tech_critical)
+        with tc3:
+            st.metric("Warnings", tech_warning)
+        with tc4:
+            st.metric("Advisory", tech_info)
+
+        st.markdown("---")
+
+        # Issue type filter
+        available_types = sorted(set(i.issue_type for i in tech_issues))
+        if available_types:
+            selected_tech_type = st.multiselect(
+                "Filter by issue type:",
+                options=available_types,
+                default=available_types,
+                key="tech_issue_filter"
+            )
+        else:
+            selected_tech_type = []
+
+        filtered_tech_issues = [i for i in tech_issues if i.issue_type in selected_tech_type]
+
+        if not filtered_tech_issues:
             st.success("✓ No technical SEO issues detected!")
         else:
-            for issue in tech_issues:
-                with st.expander(f"[{issue.severity}] {issue.issue_type} - {issue.url}"):
+            for issue in filtered_tech_issues:
+                sev_icon = "🔴" if issue.severity == "CRITICAL" else ("🟡" if issue.severity == "WARNING" else "🔵")
+                with st.expander(f"{sev_icon} [{issue.severity}] {issue.issue_type} — {issue.url}"):
                     st.write(f"**Description:** {issue.description}")
-                    if issue.css_selector: st.code(f"CSS Selector: {issue.css_selector}")
-                    if issue.xpath: st.code(f"XPath: {issue.xpath}")
+                    if issue.html_snippet:
+                        st.code(issue.html_snippet, language="html")
+                    if issue.css_selector:
+                        st.code(f"CSS Selector: {issue.css_selector}")
+                    if issue.xpath:
+                        st.code(f"XPath: {issue.xpath}")
                     st.info(f"**Recommendation:** {issue.recommendation}")
+
+        # --- Security & Mixed Content (from Advanced Audit) ---
+        if report.advanced_audit:
+            st.markdown("---")
+            st.subheader("Security & Mixed Content Summary")
+
+            adv = report.advanced_audit
+            sec_col1, sec_col2 = st.columns(2)
+            with sec_col1:
+                st.metric("Security Header Issues", adv.total_security_issues)
+            with sec_col2:
+                st.metric("Mixed Content Resources", adv.total_mixed_content)
+
+            # Show per-page security header issues
+            if adv.total_security_issues > 0:
+                with st.expander("View Security Header Details"):
+                    for page_adv in adv.pages:
+                        missing_sec = [h for h in page_adv.security_headers if not h.present and h.severity in ["CRITICAL", "WARNING"]]
+                        if missing_sec:
+                            st.write(f"**{page_adv.url}**")
+                            for h in missing_sec:
+                                st.warning(f"**{h.severity}:** {h.header} — {h.description}")
+                                st.caption(f"Fix: {h.recommendation}")
+
+            # Show mixed content details
+            if adv.total_mixed_content > 0:
+                with st.expander("View Mixed Content Details"):
+                    all_mixed = []
+                    for page_adv in adv.pages:
+                        all_mixed.extend(page_adv.mixed_content)
+                    for m in all_mixed[:20]:
+                        st.write(f"**Page:** {m.page_url}")
+                        st.write(f"  Resource: {m.resource_url} ({m.resource_type})")
 
     # 3. CONTENT SEO TAB
     with tab_content:
