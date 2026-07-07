@@ -427,7 +427,9 @@ def _get_fix_steps(issue_type):
 
 
 def export_report_to_pdf(report: WebsiteAuditReport, output_path: Union[str, Path]) -> None:
-    """Exports a professional, beautifully styled PDF document using ReportLab."""
+    """Exports a professional PDF report with Table of Contents, Overall Details, Clustered Errors, and Fix Guides."""
+    from ai_seo_audit.fix_guides import get_fix_guide_as_markdown
+    
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -448,7 +450,7 @@ def export_report_to_pdf(report: WebsiteAuditReport, output_path: Union[str, Pat
         fontSize=28,
         leading=34,
         textColor=colors.HexColor('#0f172a'),
-        alignment=1, # Center
+        alignment=1,
         spaceAfter=15
     )
     
@@ -487,6 +489,18 @@ def export_report_to_pdf(report: WebsiteAuditReport, output_path: Union[str, Pat
         keepWithNext=True
     )
 
+    h3_style = ParagraphStyle(
+        'Header3',
+        parent=styles['Heading3'],
+        fontName='Helvetica-Bold',
+        fontSize=12,
+        leading=15,
+        textColor=colors.HexColor('#334155'),
+        spaceBefore=10,
+        spaceAfter=5,
+        keepWithNext=True
+    )
+
     body_style = ParagraphStyle(
         'BodyText',
         parent=styles['Normal'],
@@ -519,7 +533,56 @@ def export_report_to_pdf(report: WebsiteAuditReport, output_path: Union[str, Pat
         spaceAfter=6
     )
 
+    toc_style = ParagraphStyle(
+        'TOCEntry',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=11,
+        leading=16,
+        textColor=colors.HexColor('#1e40af'),
+        leftIndent=20,
+        spaceAfter=4
+    )
+
+    toc_header_style = ParagraphStyle(
+        'TOCHeader',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=12,
+        leading=16,
+        textColor=colors.HexColor('#0f172a'),
+        spaceAfter=6
+    )
+
     story = []
+
+    # Collect all issues
+    all_issues = list(report.site_issues)
+    for p in report.pages:
+        for issue in p.issues:
+            all_issues.append(issue)
+
+    # Cluster issues by type
+    issue_clusters = {}
+    for issue in all_issues:
+        key = issue.issue_type
+        if key not in issue_clusters:
+            issue_clusters[key] = []
+        issue_clusters[key].append(issue)
+
+    # Sort clusters by severity (CRITICAL first)
+    def cluster_severity(cluster_key):
+        issues = issue_clusters[cluster_key]
+        has_critical = any(i.severity == "CRITICAL" for i in issues)
+        return (0 if has_critical else 1, -len(issues))
+    
+    sorted_clusters = sorted(issue_clusters.keys(), key=cluster_severity)
+
+    # Stats
+    total_issues = len(all_issues)
+    critical_count = sum(1 for i in all_issues if i.severity == "CRITICAL")
+    warning_count = sum(1 for i in all_issues if i.severity == "WARNING")
+    pages_with_issues = len(set(i.url for i in all_issues))
 
     # --- COVER PAGE ---
     story.append(Spacer(1, 100))
@@ -527,17 +590,17 @@ def export_report_to_pdf(report: WebsiteAuditReport, output_path: Union[str, Pat
     story.append(Paragraph(f"Audited Target: {pdf_escape(report.start_url)}", subtitle_style))
     story.append(Spacer(1, 50))
 
-    # Score Panel representation in PDF
+    # Score Panel
     score = report.score
     score_text = f"<b>SEO Score: {score}/100</b>"
     if score >= 90:
-        panel_color = colors.HexColor('#dcfce7') # soft green
+        panel_color = colors.HexColor('#dcfce7')
         text_color = colors.HexColor('#15803d')
     elif score >= 70:
-        panel_color = colors.HexColor('#fef9c3') # soft yellow
+        panel_color = colors.HexColor('#fef9c3')
         text_color = colors.HexColor('#a16207')
     else:
-        panel_color = colors.HexColor('#fee2e2') # soft red
+        panel_color = colors.HexColor('#fee2e2')
         text_color = colors.HexColor('#b91c1c')
 
     score_panel_style = ParagraphStyle(
@@ -563,164 +626,266 @@ def export_report_to_pdf(report: WebsiteAuditReport, output_path: Union[str, Pat
     story.append(Paragraph(f"Generated at: {report.generated_at} (UTC)", subtitle_style))
     story.append(PageBreak())
 
-    # --- EXECUTIVE SUMMARY ---
-    story.append(Paragraph("Executive Summary", h1_style))
-    story.append(Paragraph(
-        f"This report presents a thorough crawler-based SEO and meta-tag verification audit conducted on "
-        f"<b>{pdf_escape(report.start_url)}</b>. The evaluation covers document structures, canonicalization, secure HTTPS routing, "
-        f"favicons, Open Graph properties, Twitter Card validation, and structured Schema.org JSON-LD definitions.",
-        body_style
-    ))
-    story.append(Spacer(1, 15))
+    # --- TABLE OF CONTENTS ---
+    story.append(Paragraph("Table of Contents", h1_style))
+    story.append(Spacer(1, 10))
 
-    # Stats Table
-    critical_count = sum(1 for i in report.site_issues if i.severity == "CRITICAL") + \
-                     sum(sum(1 for i in p.issues if i.severity == "CRITICAL") for p in report.pages)
-    warning_count = sum(1 for i in report.site_issues if i.severity == "WARNING") + \
-                    sum(sum(1 for i in p.issues if i.severity == "WARNING") for p in report.pages)
-
-    stats_data = [
-        [Paragraph("<b>Metric</b>", body_style), Paragraph("<b>Value</b>", body_style)],
-        [Paragraph("Pages Crawled", body_style), Paragraph(str(report.total_pages_crawled), body_style)],
-        [Paragraph("Critical Issues", body_style), Paragraph(f"<font color='red'>{critical_count}</font>", body_style)],
-        [Paragraph("Warnings", body_style), Paragraph(f"<font color='orange'>{warning_count}</font>", body_style)],
-        [Paragraph("Duplicate content sets", body_style), Paragraph(str(len(report.duplicate_pages)), body_style)],
-        [Paragraph("Orphan pages found", body_style), Paragraph(str(len(report.orphan_pages)), body_style)]
+    # TOC entries
+    toc_entries = [
+        ("1. Overall Site Details", "Summary of site health and key metrics"),
+        ("2. Executive Summary", "Pages crawled, issues found, and score breakdown"),
+        ("3. Issue Clusters by Type", f"{len(sorted_clusters)} unique issue types found"),
+        ("4. Detailed Fix Guides", "Step-by-step instructions for each issue type"),
     ]
-    stats_table = Table(stats_data, colWidths=[200, 150])
-    stats_table.setStyle(TableStyle([
+
+    for title, desc in toc_entries:
+        story.append(Paragraph(f"<b>{title}</b>", toc_header_style))
+        story.append(Paragraph(f"  {desc}", toc_style))
+        story.append(Spacer(1, 6))
+
+    # Issue cluster TOC
+    story.append(Spacer(1, 10))
+    story.append(Paragraph("Issue Types Summary", h2_style))
+    
+    toc_cluster_data = [
+        [Paragraph("<b>Issue Type</b>", body_style), 
+         Paragraph("<b>Count</b>", body_style), 
+         Paragraph("<b>Severity</b>", body_style)]
+    ]
+    for cluster_key in sorted_clusters[:20]:  # Show top 20
+        issues = issue_clusters[cluster_key]
+        has_critical = any(i.severity == "CRITICAL" for i in issues)
+        sev = "CRITICAL" if has_critical else "WARNING"
+        sev_color = "red" if has_critical else "orange"
+        toc_cluster_data.append([
+            Paragraph(pdf_escape(cluster_key), body_style),
+            Paragraph(str(len(issues)), body_style),
+            Paragraph(f"<font color='{sev_color}'>{sev}</font>", body_style),
+        ])
+    
+    toc_cluster_table = Table(toc_cluster_data, colWidths=[250, 60, 80])
+    toc_cluster_table.setStyle(TableStyle([
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e1')),
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f1f5f9')),
+        ('PADDING', (0,0), (-1,-1), 6),
+        ('FONTSIZE', (0,0), (-1,-1), 8),
+    ]))
+    story.append(toc_cluster_table)
+    story.append(PageBreak())
+
+    # --- OVERALL SITE DETAILS ---
+    story.append(Paragraph("1. Overall Site Details", h1_style))
+    story.append(Spacer(1, 10))
+
+    # Site info table
+    https_pct = sum(1 for p in report.pages if p.is_https) / max(1, len(report.pages)) * 100
+    site_info_data = [
+        [Paragraph("<b>Metric</b>", body_style), Paragraph("<b>Value</b>", body_style)],
+        [Paragraph("Website URL", body_style), Paragraph(pdf_escape(report.start_url), body_style)],
+        [Paragraph("SEO Score", body_style), Paragraph(f"<b>{score}/100</b>", body_style)],
+        [Paragraph("Pages Crawled", body_style), Paragraph(str(report.total_pages_crawled), body_style)],
+        [Paragraph("HTTPS Enabled", body_style), Paragraph(f"Yes ({https_pct:.0f}%)" if https_pct == 100 else f"Partial ({https_pct:.0f}%)", body_style)],
+        [Paragraph("robots.txt Found", body_style), Paragraph("Yes" if report.robots_txt_found else "No", body_style)],
+        [Paragraph("sitemap.xml Found", body_style), Paragraph("Yes" if report.sitemap_xml_found else "No", body_style)],
+    ]
+    site_info_table = Table(site_info_data, colWidths=[200, 250])
+    site_info_table.setStyle(TableStyle([
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e1')),
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f1f5f9')),
         ('PADDING', (0,0), (-1,-1), 8),
     ]))
-    story.append(stats_table)
+    story.append(site_info_table)
+    story.append(Spacer(1, 15))
+
+    # Health metrics
+    story.append(Paragraph("Site Health Summary", h2_style))
+    
+    pages_with_title = sum(1 for p in report.pages if p.metadata.title)
+    title_pct = pages_with_title / max(1, len(report.pages)) * 100
+    pages_with_meta = sum(1 for p in report.pages if p.metadata.meta_description)
+    meta_pct = pages_with_meta / max(1, len(report.pages)) * 100
+    pages_with_h1 = sum(1 for p in report.pages if any(h.level == 1 for h in p.metadata.headings))
+    h1_pct = pages_with_h1 / max(1, len(report.pages)) * 100
+    pages_with_canonical = sum(1 for p in report.pages if p.metadata.canonical_url)
+    canonical_pct = pages_with_canonical / max(1, len(report.pages)) * 100
+
+    health_data = [
+        [Paragraph("<b>Health Check</b>", body_style), 
+         Paragraph("<b>Status</b>", body_style),
+         Paragraph("<b>Percentage</b>", body_style)],
+        [Paragraph("HTTPS Security", body_style),
+         Paragraph("✅ Pass" if https_pct == 100 else "⚠️ Partial", body_style),
+         Paragraph(f"{https_pct:.1f}%", body_style)],
+        [Paragraph("Title Tags", body_style),
+         Paragraph("✅ Good" if title_pct > 80 else "⚠️ Needs Work", body_style),
+         Paragraph(f"{title_pct:.1f}%", body_style)],
+        [Paragraph("Meta Descriptions", body_style),
+         Paragraph("✅ Good" if meta_pct > 80 else "⚠️ Needs Work", body_style),
+         Paragraph(f"{meta_pct:.1f}%", body_style)],
+        [Paragraph("H1 Headings", body_style),
+         Paragraph("✅ Good" if h1_pct > 80 else "⚠️ Needs Work", body_style),
+         Paragraph(f"{h1_pct:.1f}%", body_style)],
+        [Paragraph("Canonical Tags", body_style),
+         Paragraph("✅ Good" if canonical_pct > 80 else "⚠️ Needs Work", body_style),
+         Paragraph(f"{canonical_pct:.1f}%", body_style)],
+    ]
+    health_table = Table(health_data, colWidths=[180, 120, 100])
+    health_table.setStyle(TableStyle([
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e1')),
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f1f5f9')),
+        ('PADDING', (0,0), (-1,-1), 8),
+    ]))
+    story.append(health_table)
+    story.append(Spacer(1, 15))
+
+    # Issue distribution
+    story.append(Paragraph("Issue Distribution", h2_style))
+    issue_dist_data = [
+        [Paragraph("<b>Severity</b>", body_style), 
+         Paragraph("<b>Count</b>", body_style),
+         Paragraph("<b>Percentage</b>", body_style)],
+        [Paragraph("🔴 Critical", body_style),
+         Paragraph(str(critical_count), body_style),
+         Paragraph(f"{critical_count/max(1,total_issues)*100:.1f}%", body_style)],
+        [Paragraph("🟡 Warning", body_style),
+         Paragraph(str(warning_count), body_style),
+         Paragraph(f"{warning_count/max(1,total_issues)*100:.1f}%", body_style)],
+        [Paragraph("📊 Total", body_style),
+         Paragraph(str(total_issues), body_style),
+         Paragraph("100%", body_style)],
+    ]
+    issue_dist_table = Table(issue_dist_data, colWidths=[150, 100, 100])
+    issue_dist_table.setStyle(TableStyle([
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e1')),
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f1f5f9')),
+        ('PADDING', (0,0), (-1,-1), 8),
+    ]))
+    story.append(issue_dist_table)
     story.append(PageBreak())
 
-    # --- KEYWORD RESEARCH SECTION ---
-    if report.keyword_research:
-        kw = report.keyword_research
-        story.append(Paragraph("Keyword Research Analysis", h1_style))
-        story.append(Paragraph(
-            f"Total words analyzed: <b>{kw.total_words_analyzed}</b> | "
-            f"Unique words found: <b>{kw.unique_words_found}</b>",
-            body_style
-        ))
-        story.append(Spacer(1, 10))
+    # --- EXECUTIVE SUMMARY ---
+    story.append(Paragraph("2. Executive Summary", h1_style))
+    story.append(Paragraph(
+        f"This report presents a comprehensive SEO audit of <b>{pdf_escape(report.start_url)}</b>. "
+        f"The analysis covers <b>{report.total_pages_crawled}</b> pages and identified "
+        f"<b>{total_issues}</b> issues across <b>{pages_with_issues}</b> pages.",
+        body_style
+    ))
+    story.append(Spacer(1, 10))
 
-        # Primary Keywords Table
-        if kw.primary_keywords:
-            story.append(Paragraph("Primary Keywords", h2_style))
-            kw_header = [
-                Paragraph("<b>Keyword</b>", body_style),
-                Paragraph("<b>Count</b>", body_style),
-                Paragraph("<b>Density</b>", body_style),
-                Paragraph("<b>Title</b>", body_style),
-                Paragraph("<b>Meta</b>", body_style),
-                Paragraph("<b>Headings</b>", body_style),
-            ]
-            kw_data = [kw_header]
-            for k in kw.primary_keywords[:12]:
-                kw_data.append([
-                    Paragraph(pdf_escape(k.keyword), body_style),
-                    Paragraph(str(k.count), body_style),
-                    Paragraph(f"{k.density}%", body_style),
-                    Paragraph("Yes" if k.in_title else "-", body_style),
-                    Paragraph("Yes" if k.in_meta_desc else "-", body_style),
-                    Paragraph("Yes" if k.in_headings else "-", body_style),
-                ])
-            kw_table = Table(kw_data, colWidths=[130, 50, 55, 45, 40, 60])
-            kw_table.setStyle(TableStyle([
-                ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e1')),
-                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f1f5f9')),
-                ('PADDING', (0,0), (-1,-1), 5),
-                ('FONTSIZE', (0,0), (-1,-1), 8),
-            ]))
-            story.append(kw_table)
-            story.append(Spacer(1, 12))
-
-        # LSI Keywords
-        if kw.lsi_keywords:
-            story.append(Paragraph("LSI (Semantic) Keywords", h2_style))
-            lsi_header = [
-                Paragraph("<b>LSI Keyword</b>", body_style),
-                Paragraph("<b>Count</b>", body_style),
-                Paragraph("<b>Density</b>", body_style),
-            ]
-            lsi_data = [lsi_header]
-            for k in kw.lsi_keywords[:10]:
-                lsi_data.append([
-                    Paragraph(pdf_escape(k.keyword), body_style),
-                    Paragraph(str(k.count), body_style),
-                    Paragraph(f"{k.density}%", body_style),
-                ])
-            lsi_table = Table(lsi_data, colWidths=[200, 60, 60])
-            lsi_table.setStyle(TableStyle([
-                ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e1')),
-                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#f1f5f9')),
-                ('PADDING', (0,0), (-1,-1), 5),
-                ('FONTSIZE', (0,0), (-1,-1), 8),
-            ]))
-            story.append(lsi_table)
-            story.append(Spacer(1, 12))
-
-        # Keyword Gaps
-        if kw.keyword_gaps:
-            story.append(Paragraph("Keyword Gaps (Missing from Site)", h2_style))
-            for gap in kw.keyword_gaps:
-                story.append(Paragraph(f"  -  <b>{pdf_escape(gap)}</b>", body_style))
-            story.append(Spacer(1, 10))
-
-        story.append(PageBreak())
-
-    # --- DETAILED PAGES REPORT ---
-    story.append(Paragraph("Detailed Issues Log", h1_style))
+    # Key findings
+    story.append(Paragraph("Key Findings", h2_style))
+    findings = []
+    if critical_count > 0:
+        findings.append(f"<b>{critical_count} Critical Issues</b> requiring immediate attention")
+    if warning_count > 0:
+        findings.append(f"<b>{warning_count} Warnings</b> that should be addressed")
+    if len(report.duplicate_pages) > 0:
+        findings.append(f"<b>{len(report.duplicate_pages)} Duplicate Content Sets</b> found")
+    if len(report.orphan_pages) > 0:
+        findings.append(f"<b>{len(report.orphan_pages)} Orphan Pages</b> not linked from other pages")
+    if len(report.redirect_chains) > 0:
+        findings.append(f"<b>{len(report.redirect_chains)} Redirect Chains</b> detected")
     
-    # Global site issues
-    if report.site_issues:
-        story.append(Paragraph("Site-wide Global Issues", h2_style))
-        for issue in report.site_issues:
-            append_pdf_issue_flowable(story, issue, body_style, code_style, recommendation_style)
-            story.append(Spacer(1, 10))
+    for finding in findings:
+        story.append(Paragraph(f"  •  {finding}", body_style))
+    story.append(PageBreak())
 
-    # Page level issues
-    for p in report.pages:
-        if not p.issues:
-            continue
-        story.append(Paragraph(f"URL: {p.url} (Score: {p.score}/100)", h2_style))
-        for issue in p.issues:
-            append_pdf_issue_flowable(story, issue, body_style, code_style, recommendation_style)
-            story.append(Spacer(1, 10))
-        story.append(Spacer(1, 10))
+    # --- ISSUE CLUSTERS BY TYPE ---
+    story.append(Paragraph("3. Issue Clusters by Type", h1_style))
+    story.append(Paragraph(
+        f"Issues have been grouped into <b>{len(sorted_clusters)}</b> unique categories for easier management.",
+        body_style
+    ))
+    story.append(Spacer(1, 10))
 
-    doc.build(story)
-
-
-def append_pdf_issue_flowable(
-    story: list, 
-    issue: IssueModel, 
-    body_style: ParagraphStyle, 
-    code_style: ParagraphStyle, 
-    rec_style: ParagraphStyle
-) -> None:
-    """Helper to build a wrapped flowable item for an issue in ReportLab."""
-    sev_color = "red" if issue.severity == "CRITICAL" else "orange"
-    header_text = f"<b>[{issue.severity}]</b> {pdf_escape(issue.issue_type)}"
-    
-    content = []
-    content.append(Paragraph(f"<font color='{sev_color}'>{header_text}</font>", body_style))
-    content.append(Paragraph(pdf_escape(issue.description), body_style))
-    
-    if issue.css_selector:
-        content.append(Paragraph(f"<b>Selector:</b> {pdf_escape(issue.css_selector)}", body_style))
-    if issue.xpath:
-        content.append(Paragraph(f"<b>XPath:</b> {pdf_escape(issue.xpath)}", body_style))
-    if issue.html_snippet:
-        snippet = pdf_escape(issue.html_snippet)
-        content.append(Paragraph(snippet, code_style))
+    for cluster_key in sorted_clusters:
+        issues = issue_clusters[cluster_key]
+        has_critical = any(i.severity == "CRITICAL" for i in issues)
         
-    content.append(Paragraph(f"<b>Recommendation:</b> {pdf_escape(issue.recommendation)}", rec_style))
+        # Cluster header
+        sev_icon = "🔴" if has_critical else "🟡"
+        story.append(Paragraph(f"{sev_icon} {cluster_key} ({len(issues)} pages)", h2_style))
+        
+        # Sample issue description
+        sample = issues[0]
+        story.append(Paragraph(f"<b>Description:</b> {pdf_escape(sample.description)}", body_style))
+        story.append(Paragraph(f"<b>Recommendation:</b> {pdf_escape(sample.recommendation)}", recommendation_style))
+        story.append(Spacer(1, 5))
+        
+        # Affected URLs (show first 10)
+        url_data = [
+            [Paragraph("<b>Affected URLs</b>", body_style)]
+        ]
+        for issue in issues[:10]:
+            url_data.append([Paragraph(pdf_escape(issue.url), body_style)])
+        if len(issues) > 10:
+            url_data.append([Paragraph(f"... and {len(issues) - 10} more", body_style)])
+        
+        url_table = Table(url_data, colWidths=[450])
+        url_table.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e1')),
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#fef2f2') if has_critical else colors.HexColor('#fef9c3')),
+            ('PADDING', (0,0), (-1,-1), 5),
+            ('FONTSIZE', (0,0), (-1,-1), 8),
+        ]))
+        story.append(url_table)
+        story.append(Spacer(1, 12))
     
-    story.append(KeepTogether(content))
+    story.append(PageBreak())
+
+    # --- DETAILED FIX GUIDES ---
+    story.append(Paragraph("4. Detailed Fix Guides", h1_style))
+    story.append(Paragraph(
+        "Step-by-step instructions to resolve each issue type. Follow these guides to improve your SEO score.",
+        body_style
+    ))
+    story.append(Spacer(1, 10))
+
+    for cluster_key in sorted_clusters:
+        issues = issue_clusters[cluster_key]
+        has_critical = any(i.severity == "CRITICAL" for i in issues)
+        
+        # Get fix guide
+        try:
+            guide = get_fix_guide_as_markdown(cluster_key)
+        except:
+            guide = None
+        
+        if guide and "No fix guide available" not in guide:
+            sev_icon = "🔴" if has_critical else "🟡"
+            story.append(Paragraph(f"{sev_icon} Fix Guide: {cluster_key}", h2_style))
+            
+            # Parse guide into sections - escape all HTML tags
+            guide_lines = guide.split('\n')
+            for line in guide_lines:
+                line = line.strip()
+                if not line:
+                    continue
+                if line.startswith('## '):
+                    story.append(Paragraph(pdf_escape(line[3:]), h3_style))
+                elif line.startswith('### '):
+                    story.append(Paragraph(pdf_escape(line[4:]), h3_style))
+                elif line.startswith('**'):
+                    # Bold text - escape and use plain text
+                    clean = line.replace('**', '').replace('*', '')
+                    story.append(Paragraph(f"<b>{pdf_escape(clean)}</b>", body_style))
+                elif line.startswith('- '):
+                    story.append(Paragraph(f"  •  {pdf_escape(line[2:])}", body_style))
+                elif line.startswith('1.') or line.startswith('2.') or line.startswith('3.'):
+                    story.append(Paragraph(f"  {pdf_escape(line)}", body_style))
+                elif line.startswith('```'):
+                    # Skip code block markers
+                    continue
+                elif '<' in line and '>' in line:
+                    # Code snippet - escape HTML
+                    story.append(Paragraph(pdf_escape(line), code_style))
+                else:
+                    story.append(Paragraph(pdf_escape(line), body_style))
+            
+            story.append(Spacer(1, 15))
+    
+    doc.build(story)
 
 
 def build_html_issue_card(issue: IssueModel) -> str:
