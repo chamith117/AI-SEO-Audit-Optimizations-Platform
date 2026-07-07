@@ -26,6 +26,7 @@ from ai_seo_audit.keyword_research import (
     extract_keywords_from_report,
     get_page_text_content,
 )
+from ai_seo_audit.fix_guides import get_fix_guide, list_available_guides, FIX_GUIDES
 from ai_seo_audit.ai_engine import (
     get_title_suggestions,
     get_meta_desc_suggestions,
@@ -1983,8 +1984,8 @@ if st.session_state.report:
 
     # 11. FIX GUIDE TAB
     with tab_fix:
-        st.subheader("Step-by-Step Fix Guide")
-        st.write("Get detailed instructions to resolve every error and warning found in your audit.")
+        st.subheader("Comprehensive Fix Guide")
+        st.write("Detailed step-by-step instructions to resolve every issue found in your audit.")
 
         # Collect all issues
         all_issues = list(report.site_issues)
@@ -2008,60 +2009,91 @@ if st.session_state.report:
 
             st.markdown("---")
 
-            # Full Fix Plan button
-            if st.button("Generate Complete Fix Plan", type="primary", key="full_fix_plan"):
-                with st.spinner("Generating prioritized fix plan for all issues..."):
-                    fix_plan = generate_full_fix_plan(user_api_key, all_issues)
-                    st.session_state.fix_plan = fix_plan
+            # CMS selector
+            st.subheader("Select Your CMS Platform")
+            st.caption("Get platform-specific instructions for your content management system.")
+            cms_platform = st.radio(
+                "Choose your CMS:",
+                options=["generic", "wordpress", "shopify", "wix", "squarespace"],
+                format_func=lambda x: {
+                    "generic": "Generic (HTML/Code)",
+                    "wordpress": "WordPress",
+                    "shopify": "Shopify",
+                    "wix": "Wix",
+                    "squarespace": "Squarespace"
+                }[x],
+                horizontal=True,
+                key="cms_platform"
+            )
 
-            if "fix_plan" in st.session_state:
-                st.markdown(st.session_state.fix_plan)
+            st.markdown("---")
+
+            # Group by issue type
+            issue_types = sorted(set(i.issue_type for i in all_issues))
+
+            # Sort by severity (CRITICAL first)
+            def get_severity_priority(issue_type):
+                issues = [i for i in all_issues if i.issue_type == issue_type]
+                has_critical = any(i.severity == "CRITICAL" for i in issues)
+                return 0 if has_critical else 1
+
+            issue_types.sort(key=get_severity_priority)
+
+            # Show issue count per type
+            st.subheader("Issues Found")
+            st.caption("Click on an issue type to see the full fix guide.")
+
+            issue_summary = []
+            for issue_type in issue_types:
+                issues = [i for i in all_issues if i.issue_type == issue_type]
+                has_critical = any(i.severity == "CRITICAL" for i in issues)
+                issue_summary.append({
+                    "Issue": issue_type,
+                    "Count": len(issues),
+                    "Severity": "CRITICAL" if has_critical else "WARNING"
+                })
+
+            st.dataframe(pd.DataFrame(issue_summary), use_container_width=True, hide_index=True)
 
             st.markdown("---")
 
             # Individual issue fix guides
-            st.subheader("Fix Individual Issues")
-            st.caption("Select an issue type to see step-by-step resolution instructions.")
-
-            # Group by issue type
-            issue_types = list(set(i.issue_type for i in all_issues))
-            issue_types.sort()
+            st.subheader("Fix Guides")
 
             selected_fix_type = st.selectbox(
-                "Select issue type to get fix instructions:",
+                "Select issue type to see the fix guide:",
                 options=issue_types,
-                key="fix_type_select"
+                key="fix_type_select_v2"
             )
 
             if selected_fix_type:
-                # Find first occurrence of this issue
-                sample_issue = next(i for i in all_issues if i.issue_type == selected_fix_type)
-                issue_count = sum(1 for i in all_issues if i.issue_type == selected_fix_type)
-
-                st.info(f"**{selected_fix_type}** — Found on {issue_count} page(s)")
-
-                # Get fix guide
-                fix_guide = get_fix_guide_for_issue(
-                    user_api_key,
-                    selected_fix_type,
-                    sample_issue.description,
-                    sample_issue.url
-                )
-                st.markdown(fix_guide)
-
-                # Show affected URLs
-                st.markdown("#### Affected URLs")
                 affected = [i for i in all_issues if i.issue_type == selected_fix_type]
-                for issue in affected[:10]:
-                    with st.expander(f"{issue.severity}: {issue.url}"):
+                has_critical = any(i.severity == "CRITICAL" for i in affected)
+
+                severity_color = "red" if has_critical else "orange"
+                st.markdown(f"#### :{severity_color}[{selected_fix_type}]")
+                st.info(f"Found on **{len(affected)}** page(s)")
+
+                # Get the comprehensive guide
+                guide_content = get_fix_guide(selected_fix_type, cms=cms_platform)
+                st.markdown(guide_content)
+
+                # Show affected URLs with details
+                st.markdown("---")
+                st.markdown("##### Affected URLs")
+
+                for issue in affected:
+                    with st.expander(f"[{issue.severity}] {issue.url}"):
                         st.write(f"**Description:** {issue.description}")
                         if issue.html_snippet:
+                            st.markdown("**HTML Snippet:**")
                             st.code(issue.html_snippet, language="html")
                         if issue.css_selector:
-                            st.caption(f"CSS Selector: {issue.css_selector}")
+                            st.caption(f"CSS Selector: `{issue.css_selector}`")
                         if issue.xpath:
-                            st.caption(f"XPath: {issue.xpath}")
+                            st.caption(f"XPath: `{issue.xpath}`")
                         st.info(f"**Recommendation:** {issue.recommendation}")
+
                 if len(affected) > 10:
                     st.caption(f"... and {len(affected) - 10} more pages with this issue")
 
@@ -2069,19 +2101,20 @@ if st.session_state.report:
             st.markdown("---")
             st.subheader("Quick Reference: Common Fixes")
 
-            ref_data = [
-                {"Issue": "Missing Title", "Fix": "Add <title> tag in <head>", "Priority": "Critical"},
-                {"Issue": "Missing Meta Desc", "Fix": "Add <meta name='description'>", "Priority": "Critical"},
-                {"Issue": "No H1", "Fix": "Add one <h1> heading per page", "Priority": "Critical"},
-                {"Issue": "No HTTPS", "Fix": "Install SSL, redirect HTTP→HTTPS", "Priority": "Critical"},
-                {"Issue": "No Viewport", "Fix": "Add <meta name='viewport'>", "Priority": "Critical"},
-                {"Issue": "No Canonical", "Fix": "Add <link rel='canonical'>", "Priority": "Critical"},
-                {"Issue": "No JSON-LD", "Fix": "Add structured data <script>", "Priority": "Critical"},
-                {"Issue": "No Alt Text", "Fix": "Add alt='...' to <img>", "Priority": "Warning"},
-                {"Issue": "No Favicon", "Fix": "Add favicon.ico + <link>", "Priority": "Warning"},
-                {"Issue": "No OG Tags", "Fix": "Add og:title, og:desc, og:image", "Priority": "Warning"},
-            ]
-            st.dataframe(pd.DataFrame(ref_data), use_container_width=True, hide_index=True)
+            available_guides = list_available_guides()
+            ref_data = []
+            for issue_type in ["Missing Title", "Missing Meta Description", "Missing H1",
+                              "Missing Canonical", "Missing Viewport", "Missing Favicon",
+                              "Missing Robots Meta", "Missing Structured Data",
+                              "Missing HTTPS", "Missing Image Alt Text"]:
+                if issue_type in available_guides:
+                    ref_data.append({
+                        "Issue": issue_type,
+                        "Guide Available": "Yes"
+                    })
+
+            if ref_data:
+                st.dataframe(pd.DataFrame(ref_data), use_container_width=True, hide_index=True)
 
     # 12. AI SUGGESTIONS TAB (DeepSeek API Integration)
     with tab_ai:
