@@ -26,7 +26,7 @@ from ai_seo_audit.keyword_research import (
     extract_keywords_from_report,
     get_page_text_content,
 )
-from ai_seo_audit.fix_guides import get_fix_guide, list_available_guides, FIX_GUIDES
+from ai_seo_audit.fix_guides import get_fix_guide, get_all_fix_guides, FIX_GUIDES
 from ai_seo_audit.ai_engine import (
     get_title_suggestions,
     get_meta_desc_suggestions,
@@ -2101,7 +2101,7 @@ if st.session_state.report:
             st.markdown("---")
             st.subheader("Quick Reference: Common Fixes")
 
-            available_guides = list_available_guides()
+            available_guides = get_all_fix_guides()
             ref_data = []
             for issue_type in ["Missing Title", "Missing Meta Description", "Missing H1",
                               "Missing Canonical", "Missing Viewport", "Missing Favicon",
