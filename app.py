@@ -838,7 +838,8 @@ if st.session_state.report:
     info_count = total_issues - (critical_count + warning_count)
 
     # Core Navigation Tabs
-    tab_overview, tab_tech, tab_content, tab_images, tab_links, tab_perf, tab_data, tab_keywords, tab_advanced, tab_fix, tab_ai = st.tabs([
+    tab_report, tab_overview, tab_tech, tab_content, tab_images, tab_links, tab_perf, tab_data, tab_keywords, tab_advanced, tab_fix, tab_ai = st.tabs([
+        "📑 Full Report",
         "📊 Overview",
         "⚙️ Technical SEO",
         "📝 Content SEO",
@@ -851,6 +852,177 @@ if st.session_state.report:
         "🔧 Fix Guide",
         "🧠 AI Suggestions"
     ])
+
+    # 0. FULL REPORT TAB (Chapter-based with Table of Contents)
+    with tab_report:
+        st.subheader("📑 Full Audit Report")
+        st.caption("A comprehensive, chapter-by-chapter breakdown of your site's SEO health.")
+
+        # Collect all issues
+        all_issues = []
+        for p in report.pages:
+            for issue in p.issues:
+                all_issues.append(issue)
+        for issue in report.site_issues:
+            all_issues.append(issue)
+
+        # Group issues by chapter and section
+        chapters = {
+            "1. Critical Errors": {
+                "description": "Issues that directly harm your rankings and must be fixed immediately.",
+                "sections": {}
+            },
+            "2. Technical SEO": {
+                "description": "Server configuration, crawlability, and indexability issues.",
+                "sections": {}
+            },
+            "3. Content Quality": {
+                "description": "Title tags, meta descriptions, headings, and content issues.",
+                "sections": {}
+            },
+            "4. Images & Media": {
+                "description": "Image optimization, alt text, and media-related issues.",
+                "sections": {}
+            },
+            "5. Links & Navigation": {
+                "description": "Internal linking, external links, and navigation structure.",
+                "sections": {}
+            },
+            "6. Structured Data & Social": {
+                "description": "Schema markup, Open Graph, and social media tags.",
+                "sections": {}
+            },
+            "7. Performance & Security": {
+                "description": "Page speed, HTTPS, and security-related issues.",
+                "sections": {}
+            }
+        }
+
+        # Categorize issues into chapters
+        for issue in all_issues:
+            issue_type = issue.issue_type
+            severity = issue.severity
+
+            # Determine chapter based on issue type
+            if severity == "CRITICAL" or issue_type in ["Missing Title", "Missing Meta Description", "Missing H1", "No HTTPS"]:
+                chapter = "1. Critical Errors"
+            elif issue_type in ["Missing robots.txt", "Missing Sitemap", "Canonical Issues", "Redirect Issues",
+                               "Missing Hreflang", "Robots Meta Tag", "X-Robots-Tag", "Pagination Issues"]:
+                chapter = "2. Technical SEO"
+            elif issue_type in ["Title Too Short", "Title Too Long", "Title Duplicate", "Meta Description Too Short",
+                               "Meta Description Too Long", "Meta Description Duplicate", "Missing Viewport",
+                               "Content Quality", "Thin Content", "Missing H1", "Duplicate H1",
+                               "Multiple H1s", "Heading Hierarchy"]:
+                chapter = "3. Content Quality"
+            elif issue_type in ["Missing Image Alt", "Image Alt Too Long", "Image Alt Duplicate",
+                               "Large Image", "Missing Image Dimensions", "Image Format"]:
+                chapter = "4. Images & Media"
+            elif issue_type in ["Internal Links", "External Links", "Broken Links",
+                               "Orphan Pages", "Missing Internal Links"]:
+                chapter = "5. Links & Navigation"
+            elif issue_type in ["Missing Structured Data", "Invalid Structured Data",
+                               "Missing Open Graph", "Missing Twitter Cards", "Missing Favicon"]:
+                chapter = "6. Structured Data & Social"
+            elif issue_type in ["Slow Page", "Mixed Content", "Missing SSL",
+                               "Missing Security Headers", "Missing Cache Policy"]:
+                chapter = "7. Performance & Security"
+            else:
+                chapter = "2. Technical SEO"
+
+            # Add to chapter section
+            if issue_type not in chapters[chapter]["sections"]:
+                chapters[chapter]["sections"][issue_type] = []
+            chapters[chapter]["sections"][issue_type].append(issue)
+
+        # === TABLE OF CONTENTS ===
+        st.markdown("---")
+        st.subheader("📋 Table of Contents")
+        st.caption("Click on any chapter to jump to that section.")
+
+        toc_html = '<div style="background-color: #1e1e1e; padding: 20px; border-radius: 10px; border: 1px solid #333;">'
+        for chapter_name, chapter_data in chapters.items():
+            if chapter_data["sections"]:
+                total_in_chapter = sum(len(issues) for issues in chapter_data["sections"].values())
+                critical_in_chapter = sum(1 for issues in chapter_data["sections"].values() for i in issues if i.severity == "CRITICAL")
+
+                # Chapter header with count
+                toc_html += f'<div style="margin-bottom: 15px;">'
+                toc_html += f'<strong style="font-size: 16px;">{chapter_name}</strong>'
+                toc_html += f' <span style="color: #888;">({total_in_chapter} issues'
+
+                if critical_in_chapter > 0:
+                    toc_html += f' - <span style="color: #ff4444;">{critical_in_chapter} critical</span>'
+                toc_html += ')</span></div>'
+
+                # Section links
+                for section_name, section_issues in chapter_data["sections"].items():
+                    section_critical = sum(1 for i in section_issues if i.severity == "CRITICAL")
+                    icon = "🔴" if section_critical > 0 else "🟡"
+                    toc_html += f'<div style="margin-left: 20px; margin-bottom: 5px;">'
+                    toc_html += f'{icon} <a href="#{section_name.replace(" ", "_").lower()}" style="color: #4da6ff; text-decoration: none;">{section_name}</a>'
+                    toc_html += f' <span style="color: #666;">({len(section_issues)} pages)</span></div>'
+
+        toc_html += '</div>'
+        st.markdown(toc_html, unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # === CHAPTERS ===
+        for chapter_name, chapter_data in chapters.items():
+            if not chapter_data["sections"]:
+                continue
+
+            total_in_chapter = sum(len(issues) for issues in chapter_data["sections"].values())
+            critical_in_chapter = sum(1 for issues in chapter_data["sections"].values() for i in issues if i.severity == "CRITICAL")
+
+            # Chapter header
+            st.markdown(f"## {chapter_name}")
+            st.caption(chapter_data["description"])
+
+            # Chapter summary metrics
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Issues", total_in_chapter)
+            with col2:
+                st.metric("Critical", critical_in_chapter)
+            with col3:
+                st.metric("Pages Affected", len(set(i.url for issues in chapter_data["sections"].values() for i in issues)))
+
+            # Sections within chapter
+            for section_name, section_issues in chapter_data["sections"].items():
+                st.markdown(f"### {section_name}")
+
+                # Section info
+                section_critical = sum(1 for i in section_issues if i.severity == "CRITICAL")
+                section_warning = sum(1 for i in section_issues if i.severity == "WARNING")
+                affected_pages = list(set(i.url for i in section_issues))
+
+                # Section summary
+                st.info(f"**{len(section_issues)}** issues found on **{len(affected_pages)}** page(s) — "
+                        f"🔴 {section_critical} critical | 🟡 {section_warning} warnings")
+
+                # Affected pages table
+                issue_data = []
+                for issue in section_issues:
+                    issue_data.append({
+                        "URL": issue.url,
+                        "Severity": issue.severity,
+                        "Description": issue.description,
+                        "Recommendation": issue.recommendation
+                    })
+
+                if issue_data:
+                    st.dataframe(pd.DataFrame(issue_data), use_container_width=True, hide_index=True)
+
+                # Fix guide for this section
+                with st.expander(f"📖 How to Fix: {section_name}", expanded=False):
+                    guide_content = get_fix_guide_as_markdown(section_name)
+                    st.markdown(guide_content)
+
+                st.markdown("---")
+
+            # Chapter separator
+            st.markdown("---")
 
     # 1. OVERVIEW TAB
     with tab_overview:
