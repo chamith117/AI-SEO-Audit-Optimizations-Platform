@@ -907,7 +907,9 @@ if st.session_state.report:
             if severity == "CRITICAL" or issue_type in ["Missing Title", "Missing Meta Description", "Missing H1", "No HTTPS"]:
                 chapter = "1. Critical Errors"
             elif issue_type in ["Missing robots.txt", "Missing Sitemap", "Canonical Issues", "Redirect Issues",
-                               "Missing Hreflang", "Robots Meta Tag", "X-Robots-Tag", "Pagination Issues"]:
+                               "Missing Hreflang", "Robots Meta Tag", "X-Robots-Tag", "Pagination Issues",
+                               "Soft 404 Detected", "Server Error (5xx)", "404 Page Not Found", "403 Forbidden",
+                               "Other Client Error (4xx)", "Redirect Loop", "Too Many Redirects"]:
                 chapter = "2. Technical SEO"
             elif issue_type in ["Title Too Short", "Title Too Long", "Title Duplicate", "Meta Description Too Short",
                                "Meta Description Too Long", "Meta Description Duplicate", "Missing Viewport",
@@ -1398,6 +1400,57 @@ if st.session_state.report:
                         st.write(f"  - {u}")
 
         st.write("")
+        st.subheader("HTTP Status Code Analysis")
+
+        # HTTP Status Code Distribution
+        status_counts = {}
+        error_pages = []
+        for p in report.pages:
+            status = p.status_code
+            status_counts[status] = status_counts.get(status, 0) + 1
+            if status and (status >= 400 or status == 0):
+                error_pages.append(p)
+
+        # Status code summary
+        col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+        with col_s1:
+            ok_count = sum(v for k, v in status_counts.items() if 200 <= k < 300)
+            st.metric("2xx Success", ok_count)
+        with col_s2:
+            redirect_count = sum(v for k, v in status_counts.items() if 300 <= k < 400)
+            st.metric("3xx Redirect", redirect_count)
+        with col_s3:
+            client_error_count = sum(v for k, v in status_counts.items() if 400 <= k < 500)
+            st.metric("4xx Client Error", client_error_count)
+        with col_s4:
+            server_error_count = sum(v for k, v in status_counts.items() if 500 <= k < 600)
+            st.metric("5xx Server Error", server_error_count)
+
+        # Status code distribution chart
+        if status_counts:
+            with st.expander("View Status Code Distribution"):
+                for status, count in sorted(status_counts.items()):
+                    bar_width = int(count / max(status_counts.values()) * 30)
+                    color = "🟢" if 200 <= status < 300 else ("🟡" if 300 <= status < 400 else ("🟠" if 400 <= status < 500 else "🔴"))
+                    st.write(f"{color} **{status}**: {'█' * bar_width} {count} pages")
+
+        # Error pages detail
+        if error_pages:
+            st.warning(f"Found **{len(error_pages)}** pages with HTTP errors (4xx/5xx)")
+            with st.expander("View Pages with HTTP Errors", expanded=True):
+                error_data = []
+                for p in error_pages:
+                    error_data.append({
+                        "URL": p.url,
+                        "Status Code": p.status_code,
+                        "Issues": len(p.issues),
+                        "Score": f"{p.score}/100"
+                    })
+                st.dataframe(pd.DataFrame(error_data), use_container_width=True, hide_index=True)
+        else:
+            st.success("No HTTP errors (4xx/5xx) detected.")
+
+        st.write("")
         st.subheader("Technical Issues Log")
 
         # --- Page-Level Technical Issues ---
@@ -1421,6 +1474,11 @@ if st.session_state.report:
             "Missing Alt Text",
             "Broken Link",
             "Broken Image",
+            "Soft 404 Detected",
+            "Server Error (5xx)",
+            "404 Page Not Found",
+            "403 Forbidden",
+            "Other Client Error (4xx)",
         ]
 
         tech_issues = []
