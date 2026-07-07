@@ -1884,6 +1884,237 @@ def generate_website_search_schema(site_url: str, site_name: str) -> str:
     return json.dumps(schema, indent=2)
 
 
+def generate_ai_breadcrumbs(
+    api_key: Optional[str],
+    page_url: str,
+    page_title: str,
+    site_name: str,
+    nav_links: list = None,
+    model: Optional[str] = None
+) -> str:
+    """AI-powered breadcrumb generation from page context."""
+    nav_context = ""
+    if nav_links:
+        nav_context = f"\nNavigation links found: {', '.join(nav_links[:20])}"
+
+    prompt = (
+        f"Generate a BreadcrumbList JSON-LD schema for this page:\n"
+        f"URL: {page_url}\n"
+        f"Title: {page_title}\n"
+        f"Site: {site_name}\n"
+        f"{nav_context}\n\n"
+        f"Return ONLY valid JSON-LD with @context https://schema.org, @type BreadcrumbList. "
+        f"Include all levels from Home to current page. Use realistic URLs based on the page URL path."
+    )
+    system = "You are a structured data expert. Return only valid JSON-LD, no markdown."
+
+    try:
+        if api_key and api_key.strip():
+            result = call_ai(api_key, prompt, system, model=model)
+            import re as _re
+            json_match = _re.search(r'\{[\s\S]*\}', result)
+            if json_match:
+                data = json.loads(json_match.group())
+                if data.get("@type") == "BreadcrumbList":
+                    return json.dumps(data, indent=2)
+    except Exception:
+        pass
+
+    # Fallback: generate from URL path
+    parsed = urlparse(page_url)
+    parts = [p for p in parsed.path.split("/") if p]
+    items = [{"@type": "ListItem", "position": 1, "name": site_name, "item": f"{parsed.scheme}://{parsed.netloc}/"}]
+    for i, part in enumerate(parts):
+        url = f"{parsed.scheme}://{parsed.netloc}/" + "/".join(parts[:i+1]) + "/"
+        items.append({"@type": "ListItem", "position": i + 2, "name": part.replace("-", " ").replace("_", " ").title(), "item": url})
+    schema = {"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": items}
+    return json.dumps(schema, indent=2)
+
+
+def generate_ai_faqs(
+    api_key: Optional[str],
+    page_url: str,
+    page_title: str,
+    page_content: str,
+    model: Optional[str] = None
+) -> str:
+    """AI-powered FAQ generation from page content."""
+    prompt = (
+        f"Generate 5-8 FAQ questions and answers based on this page content:\n"
+        f"URL: {page_url}\n"
+        f"Title: {page_title}\n"
+        f"Content snippet: {page_content[:2000]}\n\n"
+        f"Return ONLY valid JSON-LD with @context https://schema.org, @type FAQPage. "
+        f"Questions should be natural search queries people would ask. "
+        f"Answers should be concise and accurate based on the content."
+    )
+    system = "You are a structured data expert. Return only valid JSON-LD, no markdown."
+
+    try:
+        if api_key and api_key.strip():
+            result = call_ai(api_key, prompt, system, model=model)
+            import re as _re
+            json_match = _re.search(r'\{[\s\S]*\}', result)
+            if json_match:
+                data = json.loads(json_match.group())
+                if data.get("@type") == "FAQPage":
+                    return json.dumps(data, indent=2)
+    except Exception:
+        pass
+
+    # Fallback
+    schema = {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {"@type": "Question", "name": f"What is {page_title}?", "acceptedAnswer": {"@type": "Answer", "text": page_content[:200] if page_content else "Information about " + page_title}},
+        ]
+    }
+    return json.dumps(schema, indent=2)
+
+
+def generate_ai_schema_for_page(
+    api_key: Optional[str],
+    page_url: str,
+    page_title: str,
+    page_description: str,
+    site_name: str,
+    page_type: str = "WebPage",
+    model: Optional[str] = None
+) -> str:
+    """AI-powered schema generation for any page type."""
+    prompt = (
+        f"Generate a complete {page_type} JSON-LD schema for this page:\n"
+        f"URL: {page_url}\n"
+        f"Title: {page_title}\n"
+        f"Description: {page_description}\n"
+        f"Site: {site_name}\n\n"
+        f"Return ONLY valid JSON-LD with @context https://schema.org, @type {page_type}. "
+        f"Include all recommended properties for this schema type. "
+        f"Use realistic data based on the page info provided."
+    )
+    system = "You are a structured data expert. Return only valid JSON-LD, no markdown."
+
+    try:
+        if api_key and api_key.strip():
+            result = call_ai(api_key, prompt, system, model=model)
+            import re as _re
+            json_match = _re.search(r'\{[\s\S]*\}', result)
+            if json_match:
+                data = json.loads(json_match.group())
+                if data.get("@context"):
+                    return json.dumps(data, indent=2)
+    except Exception:
+        pass
+
+    return json.dumps({"@context": "https://schema.org", "@type": page_type, "name": page_title, "url": page_url}, indent=2)
+
+
+def validate_schema_for_google(schema_json: str) -> dict:
+    """Validates JSON-LD schema against Google Rich Results requirements.
+
+    Returns dict with is_valid, errors, warnings, and rich_result_types.
+    """
+    import json as _json
+
+    result = {
+        "is_valid": True,
+        "errors": [],
+        "warnings": [],
+        "rich_result_types": [],
+        "missing_required": [],
+        "schema_org_valid": True,
+    }
+
+    try:
+        data = _json.loads(schema_json)
+    except _json.JSONDecodeError as e:
+        result["is_valid"] = False
+        result["errors"].append(f"Invalid JSON: {str(e)}")
+        return result
+
+    # Check @context
+    if data.get("@context") != "https://schema.org":
+        result["errors"].append("@context must be 'https://schema.org'")
+        result["is_valid"] = False
+
+    # Check @type
+    schema_type = data.get("@type", "")
+    if not schema_type:
+        result["errors"].append("Missing @type property")
+        result["is_valid"] = False
+
+    # Google Rich Results supported types
+    google_supported = {
+        "Article": ["headline", "image", "datePublished", "author"],
+        "BreadcrumbList": ["itemListElement"],
+        "FAQPage": ["mainEntity"],
+        "HowTo": ["name", "step"],
+        "JobPosting": ["title", "description", "datePosted"],
+        "LocalBusiness": ["name", "address", "telephone"],
+        "Organization": ["name", "url"],
+        "Product": ["name", "image", "description"],
+        "Recipe": ["name", "image", "recipeIngredient"],
+        "Event": ["name", "startDate", "location"],
+        "VideoObject": ["name", "description", "thumbnailUrl", "uploadDate"],
+        "WebPage": ["name", "url"],
+        "WebSite": ["name", "url"],
+        "Book": ["name", "author"],
+        "Course": ["name", "provider"],
+        "Dataset": ["name", "description"],
+        "MusicRecording": ["name", "artist"],
+        "SoftwareApplication": ["name", "operatingSystem"],
+    }
+
+    if schema_type in google_supported:
+        result["rich_result_types"].append(schema_type)
+        required = google_supported[schema_type]
+        for prop in required:
+            if prop not in data:
+                result["missing_required"].append(prop)
+                result["warnings"].append(f"Missing recommended property for {schema_type}: {prop}")
+
+    # Check for common issues
+    if schema_type == "FAQPage":
+        entities = data.get("mainEntity", [])
+        if not entities:
+            result["errors"].append("FAQPage must have mainEntity array")
+            result["is_valid"] = False
+        for i, entity in enumerate(entities):
+            if entity.get("@type") != "Question":
+                result["warnings"].append(f"Entity {i+1} should have @type Question")
+            answer = entity.get("acceptedAnswer", {})
+            if answer.get("@type") != "Answer":
+                result["warnings"].append(f"Entity {i+1} acceptedAnswer should have @type Answer")
+
+    if schema_type == "BreadcrumbList":
+        items = data.get("itemListElement", [])
+        if not items:
+            result["errors"].append("BreadcrumbList must have itemListElement array")
+            result["is_valid"] = False
+        for i, item in enumerate(items):
+            if "name" not in item:
+                result["errors"].append(f"ListItem {i+1} missing 'name'")
+                result["is_valid"] = False
+            if "position" not in item:
+                result["warnings"].append(f"ListItem {i+1} missing 'position'")
+
+    if schema_type == "Article":
+        if "datePublished" not in data:
+            result["warnings"].append("Article should have datePublished")
+        if "author" not in data:
+            result["warnings"].append("Article should have author")
+
+    if schema_type == "Organization":
+        if "name" not in data:
+            result["errors"].append("Organization must have 'name'")
+            result["is_valid"] = False
+        if "url" not in data:
+            result["warnings"].append("Organization should have 'url'")
+
+    return result
+
+
 def generate_llms_txt(
     site_name: str,
     site_url: str,

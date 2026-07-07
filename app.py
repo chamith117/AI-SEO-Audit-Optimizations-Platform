@@ -57,6 +57,10 @@ from ai_seo_audit.ai_engine import (
     generate_keyword_clusters,
     get_keyword_questions,
     test_api_connection,
+    generate_ai_breadcrumbs,
+    generate_ai_faqs,
+    generate_ai_schema_for_page,
+    validate_schema_for_google,
 )
 
 # Page configurations
@@ -1364,322 +1368,223 @@ if st.session_state.report:
 
     # 7. STRUCTURED DATA TAB
     with tab_data:
-        st.subheader("Schema.org JSON-LD")
+        st.subheader("Structured Data (Schema.org)")
 
-        # Sub-tabs for validations and generators
-        sd_tab1, sd_tab2 = st.tabs(["Validations", "Generate Schema"])
+        sd_tab1, sd_tab2, sd_tab3, sd_tab4 = st.tabs(["Validations", "AI Generate", "Schema Validator", "llms.txt"])
 
+        # === Tab 1: Existing Schema Validations ===
         with sd_tab1:
-            st.subheader("Schema Validations")
-            schema_issues = []
+            st.subheader("Detected Schema on Site")
+            all_schemas = []
+            schema_errors = []
+            schema_warnings = []
             for p in report.pages:
-                for issue in p.issues:
-                    if issue.issue_type == "Invalid JSON-LD":
-                        schema_issues.append(issue)
+                for block in p.metadata.json_ld:
+                    try:
+                        import json as _json
+                        data = _json.loads(block.data) if block.data else {}
+                        schema_type = data.get("@type", "Unknown")
+                        all_schemas.append({"Page": p.url, "Type": schema_type, "Valid": block.valid, "Error": block.error or ""})
+                        if not block.valid:
+                            schema_errors.append({"url": p.url, "error": block.error, "html": block.html_snippet})
+                    except Exception:
+                        schema_errors.append({"url": p.url, "error": "JSON parse error", "html": block.html_snippet})
 
-            if not schema_issues:
-                st.success("Detected Schema JSON-LD blocks are structured correctly!")
-            else:
-                for issue in schema_issues:
-                    with st.expander(f"[{issue.severity}] {issue.issue_type} - {issue.url}"):
-                        st.write(f"**Description:** {issue.description}")
-                        if issue.html_snippet:
-                            st.code(issue.html_snippet, language="json")
-                        st.info(f"**Recommendation:** {issue.recommendation}")
+            # Summary metrics
+            sc1, sc2, sc3, sc4 = st.columns(4)
+            with sc1:
+                st.metric("Schema Blocks Found", len(all_schemas))
+            with sc2:
+                valid_count = sum(1 for s in all_schemas if s["Valid"])
+                st.metric("Valid", valid_count)
+            with sc3:
+                st.metric("Errors", len(schema_errors))
+            with sc4:
+                types_found = set(s["Type"] for s in all_schemas)
+                st.metric("Schema Types", len(types_found))
 
+            if all_schemas:
+                st.dataframe(pd.DataFrame(all_schemas), use_container_width=True, hide_index=True)
+
+            if schema_errors:
+                st.markdown("---")
+                st.subheader("Schema Errors")
+                for err in schema_errors:
+                    with st.expander(f"❌ {err['url']}"):
+                        st.write(f"**Error:** {err['error']}")
+                        if err['html']:
+                            st.code(err['html'], language="json")
+
+            if not all_schemas:
+                st.info("No structured data (JSON-LD) found on crawled pages. Use the AI Generate tab to create schemas.")
+
+        # === Tab 2: AI-Powered Schema Generation ===
         with sd_tab2:
-            st.subheader("Structured Data Generator")
-            st.caption("Generate ready-to-use JSON-LD code. Copy and paste into your HTML <head> section.")
+            st.subheader("AI Schema Generator")
+            st.caption("AI generates schema from your crawled site content. Validates against Google Rich Results.")
 
-            schema_type = st.selectbox(
-                "Select Schema Type:",
-                options=[
-                    "BreadcrumbList",
-                    "Organization",
-                    "FAQPage",
-                    "Article",
-                    "WebPage",
-                    "LocalBusiness",
-                    "Product",
-                    "Website Search Box",
-                    "llms.txt (AI-Ready File)"
-                ],
-                key="schema_type_select"
+            gen_type = st.selectbox(
+                "Schema Type:",
+                options=["Auto (AI picks best)", "BreadcrumbList", "FAQPage", "Organization", "Article", "WebPage", "Product", "LocalBusiness", "WebSite"],
+                key="ai_gen_type"
             )
 
-            st.markdown("---")
+            # Page selector
+            page_urls = [p.url for p in report.pages]
+            selected_page_url = st.selectbox("Select page to generate schema for:", options=page_urls, key="ai_schema_page")
+            selected_page = next((p for p in report.pages if p.url == selected_page_url), None)
 
-            # BreadcrumbList Generator
-            if schema_type == "BreadcrumbList":
-                st.markdown("#### BreadcrumbList Schema")
-                st.caption("Generates breadcrumb navigation schema for better search snippets.")
+            if selected_page:
+                page_content = " ".join(h.text for h in selected_page.metadata.headings)
+                page_content += " " + (selected_page.metadata.meta_description or "")
 
-                bc_site = st.text_input("Website Name", value="My Website", key="bc_site")
-                bc_url = st.text_input("Page URL", value=url_input, key="bc_url")
-
-                st.write("**Breadcrumb Path (add items in order from home to current page):**")
-                bc_items = []
-                bc_cols = st.columns(3)
-                for i in range(5):
-                    with bc_cols[0]:
-                        name = st.text_input(f"Level {i+1} Name", value="" if i > 0 else bc_site, key=f"bc_name_{i}")
-                    with bc_cols[1]:
-                        url_val = st.text_input(f"Level {i+1} URL", value="" if i > 0 else bc_url, key=f"bc_url_{i}")
-                    if name:
-                        bc_items.append({"name": name, "url": url_val or None})
-
-                if st.button("Generate Breadcrumb Schema", key="gen_bc"):
-                    schema = generate_breadcrumb_schema(bc_site, bc_url, bc_items)
-                    st.code(schema, language="json")
-                    st.download_button("Download Breadcrumb Schema", schema, "breadcrumb-schema.json", "application/json")
-
-            # Organization Generator
-            elif schema_type == "Organization":
-                st.markdown("#### Organization Schema")
-                st.caption("Generates organization/company information schema.")
-
-                org_name = st.text_input("Organization Name", value="My Company", key="org_name")
-                org_url = st.text_input("Website URL", value=url_input, key="org_url")
-                org_logo = st.text_input("Logo URL", placeholder="https://yoursite.com/logo.png", key="org_logo")
-                org_desc = st.text_area("Description", placeholder="Brief description of your organization", key="org_desc")
-                org_phone = st.text_input("Phone Number", placeholder="+1-555-123-4567", key="org_phone")
-                org_email = st.text_input("Email", placeholder="info@yoursite.com", key="org_email")
-                org_social = st.text_area("Social Media URLs (one per line)", placeholder="https://facebook.com/yourpage\nhttps://twitter.com/yourhandle", key="org_social")
-
-                if st.button("Generate Organization Schema", key="gen_org"):
-                    social_list = [s.strip() for s in org_social.split("\n") if s.strip()]
-                    schema = generate_organization_schema(
-                        name=org_name, url=org_url, logo=org_logo,
-                        description=org_desc, phone=org_phone, email=org_email,
-                        social_links=social_list if social_list else None
-                    )
-                    st.code(schema, language="json")
-                    st.download_button("Download Organization Schema", schema, "organization-schema.json", "application/json")
-
-            # FAQ Generator
-            elif schema_type == "FAQPage":
-                st.markdown("#### FAQPage Schema")
-                st.caption("Generates FAQ schema for rich snippets in search results.")
-
-                faq_items = []
-                for i in range(5):
-                    st.markdown(f"**FAQ {i+1}:**")
-                    q = st.text_input(f"Question {i+1}", key=f"faq_q_{i}")
-                    a = st.text_area(f"Answer {i+1}", key=f"faq_a_{i}")
-                    if q and a:
-                        faq_items.append({"question": q, "answer": a})
-
-                if st.button("Generate FAQ Schema", key="gen_faq"):
-                    if faq_items:
-                        schema = generate_faq_schema(faq_items)
-                        st.code(schema, language="json")
-                        st.download_button("Download FAQ Schema", schema, "faq-schema.json", "application/json")
-                    else:
-                        st.warning("Add at least one FAQ to generate schema.")
-
-            # Article Generator
-            elif schema_type == "Article":
-                st.markdown("#### Article Schema")
-                st.caption("Generates article schema for blog posts and news articles.")
-
-                art_headline = st.text_input("Article Headline", key="art_headline")
-                art_url = st.text_input("Article URL", value=url_input, key="art_url")
-                art_desc = st.text_area("Description", key="art_desc")
-                art_image = st.text_input("Featured Image URL", key="art_image")
-                art_author = st.text_input("Author Name", key="art_author")
-                art_author_url = st.text_input("Author URL", key="art_author_url")
-                art_pub_date = st.date_input("Published Date", key="art_pub")
-                art_mod_date = st.date_input("Modified Date", key="art_mod")
-                art_publisher = st.text_input("Publisher Name", key="art_publisher")
-                art_logo = st.text_input("Publisher Logo URL", key="art_logo")
-
-                if st.button("Generate Article Schema", key="gen_art"):
-                    schema = generate_article_schema(
-                        headline=art_headline, url=art_url, description=art_desc,
-                        image=art_image, author_name=art_author, author_url=art_author_url,
-                        date_published=str(art_pub_date), date_modified=str(art_mod_date),
-                        publisher_name=art_publisher, publisher_logo=art_logo
-                    )
-                    st.code(schema, language="json")
-                    st.download_button("Download Article Schema", schema, "article-schema.json", "application/json")
-
-            # WebPage Generator
-            elif schema_type == "WebPage":
-                st.markdown("#### WebPage Schema")
-                st.caption("Generates basic webpage schema for any page on your site.")
-
-                wp_title = st.text_input("Page Title", key="wp_title")
-                wp_url = st.text_input("Page URL", value=url_input, key="wp_url")
-                wp_desc = st.text_area("Description", key="wp_desc")
-                wp_lang = st.selectbox("Language", options=["en", "es", "fr", "de", "it", "pt", "ja", "ko", "zh", "ar", "hi", "ru"], key="wp_lang")
-
-                if st.button("Generate WebPage Schema", key="gen_wp"):
-                    schema = generate_webpage_schema(wp_title, wp_url, wp_desc, wp_lang)
-                    st.code(schema, language="json")
-                    st.download_button("Download WebPage Schema", schema, "webpage-schema.json", "application/json")
-
-            # LocalBusiness Generator
-            elif schema_type == "LocalBusiness":
-                st.markdown("#### LocalBusiness Schema")
-                st.caption("Generates local business schema for local SEO.")
-
-                lb_name = st.text_input("Business Name", key="lb_name")
-                lb_url = st.text_input("Website URL", value=url_input, key="lb_url")
-                lb_phone = st.text_input("Phone Number", key="lb_phone")
-                lb_address = st.text_input("Street Address", key="lb_address")
-                lb_cols = st.columns(3)
-                with lb_cols[0]:
-                    lb_city = st.text_input("City", key="lb_city")
-                with lb_cols[1]:
-                    lb_state = st.text_input("State", key="lb_state")
-                with lb_cols[2]:
-                    lb_zip = st.text_input("ZIP Code", key="lb_zip")
-                lb_hours = st.text_input("Opening Hours", placeholder="Mo-Fr 09:00-17:00", key="lb_hours")
-                lb_price = st.selectbox("Price Range", options=["$", "$$", "$$$", "$$$$"], key="lb_price")
-
-                if st.button("Generate LocalBusiness Schema", key="gen_lb"):
-                    schema = generate_local_business_schema(
-                        name=lb_name, url=lb_url, phone=lb_phone,
-                        address=lb_address, city=lb_city, state=lb_state,
-                        zip_code=lb_zip, opening_hours=lb_hours, price_range=lb_price
-                    )
-                    st.code(schema, language="json")
-                    st.download_button("Download LocalBusiness Schema", schema, "localbusiness-schema.json", "application/json")
-
-            # Product Generator
-            elif schema_type == "Product":
-                st.markdown("#### Product Schema")
-                st.caption("Generates product schema for e-commerce pages.")
-
-                pr_name = st.text_input("Product Name", key="pr_name")
-                pr_url = st.text_input("Product URL", value=url_input, key="pr_url")
-                pr_desc = st.text_area("Description", key="pr_desc")
-                pr_image = st.text_input("Product Image URL", key="pr_image")
-                pr_price = st.text_input("Price", key="pr_price")
-                pr_currency = st.selectbox("Currency", options=["USD", "EUR", "GBP", "CAD", "AUD", "JPY"], key="pr_currency")
-                pr_avail = st.selectbox("Availability", options=["InStock", "OutOfStock", "PreOrder", "SoldOut"], key="pr_avail")
-                pr_brand = st.text_input("Brand Name", key="pr_brand")
-
-                if st.button("Generate Product Schema", key="gen_pr"):
-                    schema = generate_product_schema(
-                        name=pr_name, url=pr_url, description=pr_desc,
-                        image=pr_image, price=pr_price, currency=pr_currency,
-                        availability=pr_avail, brand=pr_brand
-                    )
-                    st.code(schema, language="json")
-                    st.download_button("Download Product Schema", schema, "product-schema.json", "application/json")
-
-            # Website Search Box Generator
-            elif schema_type == "Website Search Box":
-                st.markdown("#### Website Search Box Schema")
-                st.caption("Adds a sitelinks search box to your Google search results.")
-
-                ws_url = st.text_input("Website URL", value=url_input, key="ws_url")
-                ws_name = st.text_input("Website Name", key="ws_name")
-
-                if st.button("Generate Search Box Schema", key="gen_ws"):
-                    schema = generate_website_search_schema(ws_url, ws_name)
-                    st.code(schema, language="json")
-                    st.download_button("Download Search Box Schema", schema, "searchbox-schema.json", "application/json")
-
-            # llms.txt Generator
-            elif schema_type == "llms.txt (AI-Ready File)":
-                st.markdown("#### llms.txt Generator")
-                st.caption("Generate files that help AI language models (ChatGPT, Claude, Gemini) understand your website. Place in your site root.")
-
-                llm_name = st.text_input("Website Name", value=report.start_url.split("//")[-1].split("/")[0], key="llm_name")
-                llm_url = st.text_input("Website URL", value=url_input, key="llm_url")
-                llm_desc = st.text_area("Website Description", value=f"AI-powered SEO audit and optimization platform.", key="llm_desc")
-                llm_email = st.text_input("Contact Email", placeholder="info@yoursite.com", key="llm_email")
-                llm_contact = st.text_input("Contact Page URL", key="llm_contact")
-                llm_blog = st.text_input("Blog URL", key="llm_blog")
-                llm_api = st.text_input("API Docs URL", key="llm_api")
-                llm_pricing = st.text_input("Pricing URL", key="llm_pricing")
-
-                st.markdown("**Key Features (one per line):**")
-                llm_features_text = st.text_area(
-                    "Features",
-                    value="AI-powered SEO analysis\nWebsite crawling and auditing\nKeyword research\nStructured data generation\nPDF/HTML/JSON report export",
-                    key="llm_features"
-                )
-
-                st.markdown("**FAQs (for AI models to answer questions about your site):**")
-                llm_faqs = []
-                for i in range(5):
-                    fc1, fc2 = st.columns(2)
-                    with fc1:
-                        q = st.text_input(f"FAQ Question {i+1}", key=f"llm_faq_q_{i}")
-                    with fc2:
-                        a = st.text_input(f"FAQ Answer {i+1}", key=f"llm_faq_a_{i}")
-                    if q and a:
-                        llm_faqs.append({"question": q, "answer": a})
-
-                st.markdown("**Social Links (optional):**")
-                sl_cols = st.columns(3)
-                with sl_cols[0]:
-                    sl_twitter = st.text_input("Twitter/X URL", key="sl_twitter")
-                with sl_cols[1]:
-                    sl_github = st.text_input("GitHub URL", key="sl_github")
-                with sl_cols[2]:
-                    sl_linkedin = st.text_input("LinkedIn URL", key="sl_linkedin")
-
-                if st.button("Generate llms.txt", key="gen_llms"):
-                    features = [f.strip() for f in llm_features_text.split("\n") if f.strip()]
-                    social = {}
-                    if sl_twitter: social["Twitter"] = sl_twitter
-                    if sl_github: social["GitHub"] = sl_github
-                    if sl_linkedin: social["LinkedIn"] = sl_linkedin
-
-                    llms_content = generate_llms_txt(
-                        site_name=llm_name,
-                        site_url=llm_url,
-                        site_description=llm_desc,
-                        pages=[{"title": p.metadata.title or p.url, "url": p.url, "description": p.metadata.meta_description or ""} for p in report.pages[:20]],
-                        faqs=llm_faqs if llm_faqs else None,
-                        contact_email=llm_email,
-                        contact_url=llm_contact,
-                        api_docs_url=llm_api,
-                        blog_url=llm_blog,
-                        features=features,
-                        pricing_url=llm_pricing,
-                        social_links=social if social else None,
-                    )
-                    st.code(llms_content, language="text")
-                    st.download_button("Download llms.txt", llms_content, "llms.txt", "text/plain")
-
-                    llms_full = generate_llms_full_txt(
-                        site_name=llm_name,
-                        site_url=llm_url,
-                        site_description=llm_desc,
-                        pages=[{"title": p.metadata.title or p.url, "url": p.url, "description": p.metadata.meta_description or ""} for p in report.pages[:20]],
-                        faqs=llm_faqs if llm_faqs else None,
-                        contact_email=llm_email,
-                        features=features,
-                        pricing_url=llm_pricing,
-                        blog_url=llm_blog,
-                        api_docs_url=llm_api,
-                        social_links=social if social else None,
-                    )
-                    st.download_button("Download llms-full.txt", llms_full, "llms-full.txt", "text/plain")
-
-            # How to add instructions
-            if schema_type != "llms.txt (AI-Ready File)":
+                # Auto-generate breadcrumbs
                 st.markdown("---")
-                st.markdown("#### How to Add This to Your Website")
-                st.markdown("""
-                **HTML:** Paste the code inside `<head>` section:
-                ```html
-                <script type="application/ld+json">
-                { paste code here }
-                </script>
-                ```
+                auto_bc, auto_faq = st.columns(2)
+                with auto_bc:
+                    st.markdown("#### Auto Breadcrumbs")
+                    st.caption("AI generates breadcrumbs from page URL and navigation")
+                    if st.button("Generate Breadcrumbs", type="primary", key="gen_ai_bc"):
+                        nav_links = [l.url for l in selected_page.links if l.is_internal][:15]
+                        with st.spinner("AI generating breadcrumbs..."):
+                            bc_schema = generate_ai_breadcrumbs(
+                                user_api_key, selected_page_url,
+                                selected_page.metadata.title or "Page",
+                                report.start_url.split("//")[-1].split("/")[0],
+                                nav_links, model=selected_model
+                            )
+                            st.session_state.ai_bc_schema = bc_schema
+                    if "ai_bc_schema" in st.session_state:
+                        st.code(st.session_state.ai_bc_schema, language="json")
+                        st.download_button("Download", st.session_state.ai_bc_schema, "breadcrumbs.json", "application/json", key="dl_bc")
+                        # Validate
+                        val = validate_schema_for_google(st.session_state.ai_bc_schema)
+                        if val["is_valid"]:
+                            st.success(f"✅ Valid — Rich Result Type: {', '.join(val['rich_result_types']) or 'N/A'}")
+                        else:
+                            for e in val["errors"]:
+                                st.error(e)
 
-                **WordPress:** Use a plugin like "Insert Headers and Footers" or "Yoast SEO" > Advanced > JSON-LD
+                with auto_faq:
+                    st.markdown("#### Auto FAQs")
+                    st.caption("AI generates FAQs from page content")
+                    if st.button("Generate FAQs", type="primary", key="gen_ai_faq"):
+                        with st.spinner("AI generating FAQs..."):
+                            faq_schema = generate_ai_faqs(
+                                user_api_key, selected_page_url,
+                                selected_page.metadata.title or "Page",
+                                page_content, model=selected_model
+                            )
+                            st.session_state.ai_faq_schema = faq_schema
+                    if "ai_faq_schema" in st.session_state:
+                        st.code(st.session_state.ai_faq_schema, language="json")
+                        st.download_button("Download", st.session_state.ai_faq_schema, "faq.json", "application/json", key="dl_faq")
+                        val = validate_schema_for_google(st.session_state.ai_faq_schema)
+                        if val["is_valid"]:
+                            st.success(f"✅ Valid — Rich Result Type: {', '.join(val['rich_result_types']) or 'N/A'}")
+                        else:
+                            for e in val["errors"]:
+                                st.error(e)
 
-                **Shopify:** Go to Online Store > Themes > Edit code > theme.liquid > paste in `<head>`
+                st.markdown("---")
 
-                **Webflow:** Project Settings > Custom Code > Head Code > paste the script tag
-                """)
+                # Generate any schema type
+                if gen_type != "Auto (AI picks best)":
+                    if st.button(f"Generate {gen_type} Schema", type="primary", key="gen_ai_any"):
+                        with st.spinner(f"AI generating {gen_type} schema..."):
+                            schema = generate_ai_schema_for_page(
+                                user_api_key, selected_page_url,
+                                selected_page.metadata.title or "Page",
+                                selected_page.metadata.meta_description or "",
+                                report.start_url.split("//")[-1].split("/")[0],
+                                page_type=gen_type, model=selected_model
+                            )
+                            st.session_state.ai_any_schema = schema
+                    if "ai_any_schema" in st.session_state:
+                        st.code(st.session_state.ai_any_schema, language="json")
+                        st.download_button("Download", st.session_state.ai_any_schema, f"{gen_type.lower()}-schema.json", "application/json", key="dl_any")
+                        val = validate_schema_for_google(st.session_state.ai_any_schema)
+                        if val["is_valid"]:
+                            st.success(f"✅ Valid — Rich Result Type: {', '.join(val['rich_result_types']) or 'N/A'}")
+                        else:
+                            for e in val["errors"]:
+                                st.error(e)
+                        if val["warnings"]:
+                            for w in val["warnings"]:
+                                st.warning(w)
+
+        # === Tab 3: Schema Validator ===
+        with sd_tab3:
+            st.subheader("Schema.org & Google Rich Results Validator")
+            st.caption("Paste any JSON-LD to validate against schema.org and Google Rich Results requirements.")
+
+            validator_input = st.text_area(
+                "Paste JSON-LD schema:",
+                height=200,
+                placeholder='{"@context": "https://schema.org", "@type": "FAQPage", ...}',
+                key="validator_input"
+            )
+
+            if st.button("Validate Schema", type="primary", key="validate_btn") and validator_input:
+                val = validate_schema_for_google(validator_input)
+                v1, v2 = st.columns(2)
+                with v1:
+                    if val["is_valid"]:
+                        st.success("✅ Valid JSON-LD")
+                    else:
+                        st.error("❌ Invalid JSON-LD")
+                        for e in val["errors"]:
+                            st.write(f"- {e}")
+                with v2:
+                    if val["rich_result_types"]:
+                        st.info(f"Google Rich Result Type: {', '.join(val['rich_result_types'])}")
+                    if val["missing_required"]:
+                        st.warning(f"Missing recommended: {', '.join(val['missing_required'])}")
+                    if val["warnings"]:
+                        for w in val["warnings"]:
+                            st.warning(w)
+
+                # Google Rich Results link
+                st.markdown("---")
+                st.markdown("**Test in Google Rich Results Test:** [search.google.com/test/rich-results](https://search.google.com/test/rich-results)")
+                st.markdown("**Schema.org Validator:** [validator.schema.org](https://validator.schema.org/)")
+
+        # === Tab 4: llms.txt ===
+        with sd_tab4:
+            st.markdown("#### llms.txt Generator")
+            st.caption("Generate files that help AI language models understand your website. Place in your site root.")
+
+            llm_name = st.text_input("Website Name", value=report.start_url.split("//")[-1].split("/")[0], key="llm_name")
+            llm_url = st.text_input("Website URL", value=url_input, key="llm_url")
+            llm_desc = st.text_area("Website Description", value="AI-powered SEO audit and optimization platform.", key="llm_desc")
+            llm_email = st.text_input("Contact Email", placeholder="info@yoursite.com", key="llm_email")
+            llm_features_text = st.text_area("Key Features (one per line)", value="AI-powered SEO analysis\nWebsite crawling and auditing\nKeyword research\nStructured data generation", key="llm_features")
+
+            llm_faqs = []
+            for i in range(3):
+                fc1, fc2 = st.columns(2)
+                with fc1:
+                    q = st.text_input(f"FAQ {i+1}", key=f"llm_fq_{i}")
+                with fc2:
+                    a = st.text_input(f"Answer {i+1}", key=f"llm_fa_{i}")
+                if q and a:
+                    llm_faqs.append({"question": q, "answer": a})
+
+            if st.button("Generate llms.txt", key="gen_llms_new"):
+                features = [f.strip() for f in llm_features_text.split("\n") if f.strip()]
+                llms_content = generate_llms_txt(
+                    site_name=llm_name, site_url=llm_url, site_description=llm_desc,
+                    pages=[{"title": p.metadata.title or p.url, "url": p.url, "description": p.metadata.meta_description or ""} for p in report.pages[:20]],
+                    faqs=llm_faqs if llm_faqs else None, contact_email=llm_email, features=features,
+                )
+                st.code(llms_content, language="text")
+                st.download_button("Download llms.txt", llms_content, "llms.txt", "text/plain", key="dl_llms")
+                llms_full = generate_llms_full_txt(
+                    site_name=llm_name, site_url=llm_url, site_description=llm_desc,
+                    pages=[{"title": p.metadata.title or p.url, "url": p.url, "description": p.metadata.meta_description or ""} for p in report.pages[:20]],
+                    faqs=llm_faqs if llm_faqs else None, contact_email=llm_email, features=features,
+                )
+                st.download_button("Download llms-full.txt", llms_full, "llms-full.txt", "text/plain", key="dl_llms_full")
 
     # 9. ADVANCED AUDIT TAB
     with tab_advanced:
