@@ -279,91 +279,172 @@ class SiteCrawler:
         """Determines if a URL can be crawled according to robots.txt rules."""
         if not self.respect_robots:
             return True
-            
         parsed = urlparse(url)
         domain = parsed.netloc
         scheme = parsed.scheme
         if not domain:
             return True
-
         if domain not in self.robots_parsers:
             rp = RobotFileParser()
             rp.set_url(f"{scheme}://{domain}/robots.txt")
             try:
                 res = self.crawler.session.get(
-                    f"{scheme}://{domain}/robots.txt",
-                    timeout=5,
+                    f"{scheme}://{domain}/robots.txt", timeout=5,
                     verify=self.crawler.verify_ssl
                 )
                 if res.status_code == 200:
                     rp.parse(res.text.splitlines())
                 else:
-                    # Can't fetch robots.txt - allow crawling
                     rp.parse([])
             except Exception:
-                # Can't fetch robots.txt - allow crawling
                 rp.parse([])
             self.robots_parsers[domain] = rp
-
         return self.robots_parsers[domain].can_fetch(
             self.crawler.session.headers.get("User-Agent", ""), url
         )
 
-    def crawl_site(self, start_url: str):
-        """Iteratively crawls the website from a start URL, yielding results for progress tracking.
+    def _discover_sitemap_urls(self, start_url: str) -> List[str]:
+        """Fetch sitemap.xml and extract all URLs from it."""
+        parsed = urlparse(start_url)
+        base = f"{parsed.scheme}://{parsed.netloc}"
+        sitemap_urls = []
 
-        Yields:
-            Tuple[str, int, Optional[CrawlResult], int]: (current_url, pages_crawled_so_far, result_if_fetched, current_queue_size)
+        sitemap_paths = ["/sitemap.xml", "/sitemap_index.xml", "/sitemap-index.xml"]
+        for path in sitemap_paths:
+            try:
+                res = self.crawler.session.get(
+                    f"{base}{path}", timeout=10, verify=self.crawler.verify_ssl
+                )
+                if res.status_code == 200 and "xml" in res.headers.get("Content-Type", "").lower():
+                    from xml.etree import ElementTree as ET
+                    root = ET.fromstring(res.text)
+                    ns = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+
+                    sitemaps = root.findall(".//s:sitemap", ns)
+                    if sitemaps:
+                        for sm in sitemaps:
+                            loc = sm.find("s:loc", ns)
+                            if loc is not None and loc.text:
+                                try:
+                                    sub_res = self.crawler.session.get(
+                                        loc.text.strip(), timeout=10,
+                                        verify=self.crawler.verify_ssl
+                                    )
+                                    if sub_res.status_code == 200:
+                                        sub_root = ET.fromstring(sub_res.text)
+                                        for url_elem in sub_root.findall(".//s:url", ns):
+                                            loc_tag = url_elem.find("s:loc", ns)
+                                            if loc_tag is not None and loc_tag.text:
+                                                sitemap_urls.append(loc_tag.text.strip())
+                                except Exception:
+                                    pass
+                    else:
+                        for url_elem in root.findall(".//s:url", ns):
+                            loc_tag = url_elem.find("s:loc", ns)
+                            if loc_tag is not None and loc_tag.text:
+                                sitemap_urls.append(loc_tag.text.strip())
+                    if sitemap_urls:
+                        break
+            except Exception:
+                continue
+        return sitemap_urls
+
+    def _extract_links_from_html(self, html: str, base_url: str) -> List[str]:
+        """Extract ALL internal links from HTML: <a>, <link>, <area>, meta refresh."""
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, "lxml")
+        links = set()
+
+        for tag in soup.find_all("a"):
+            href = tag.get("href")
+            if href and not href.startswith(("#", "javascript:", "mailto:", "tel:", "data:")):
+                abs_url = urljoin(base_url, href.strip())
+                if is_internal_url(abs_url, base_url):
+                    links.add(abs_url)
+
+        for tag in soup.find_all("link"):
+            href = tag.get("href")
+            rel = tag.get("rel", [])
+            if href and any(r in rel for r in ["alternate", "canonical", "next", "prev"]):
+                abs_url = urljoin(base_url, href.strip())
+                if is_internal_url(abs_url, base_url):
+                    links.add(abs_url)
+
+        for tag in soup.find_all("area"):
+            href = tag.get("href")
+            if href and not href.startswith(("#", "javascript:", "mailto:")):
+                abs_url = urljoin(base_url, href.strip())
+                if is_internal_url(abs_url, base_url):
+                    links.add(abs_url)
+
+        for tag in soup.find_all("meta", attrs={"http-equiv": "refresh"}):
+            content = tag.get("content", "")
+            if "url=" in content.lower():
+                url_part = content.split("url=", 1)[-1].strip()
+                abs_url = urljoin(base_url, url_part)
+                if is_internal_url(abs_url, base_url):
+                    links.add(abs_url)
+
+        return list(links)
+
+    def crawl_site(self, start_url: str):
+        """Crawls the whole website like Screaming Frog.
+
+        Strategy:
+        1. Discover URLs from sitemap.xml
+        2. Crawl from start URL, discovering more links
+        3. BFS through all discovered internal URLs up to max_pages
         """
-        # Set of seen URLs to prevent duplicate visits
         visited: Set[str] = set()
-        
-        # Queue storing tuples of (url, current_depth)
-        queue: deque = deque([(start_url, 0)])
-        
+        queue: deque = deque()
         pages_crawled = 0
 
+        # STEP 1: Discover all URLs from sitemap.xml
+        sitemap_urls = self._discover_sitemap_urls(start_url)
+        for url in sitemap_urls:
+            parsed = urlparse(url)
+            clean = f"{parsed.scheme}://{parsed.netloc}{parsed.path.rstrip('/') or '/'}"
+            if clean not in visited:
+                queue.append((url, 0))
+                visited.add(clean)
+
+        # STEP 2: Add start URL
+        parsed_start = urlparse(start_url)
+        start_clean = f"{parsed_start.scheme}://{parsed_start.netloc}{parsed_start.path.rstrip('/') or '/'}"
+        if start_clean not in visited:
+            queue.append((start_url, 0))
+            visited.add(start_clean)
+
+        # STEP 3: BFS crawl through all discovered URLs
         while queue and pages_crawled < self.max_pages:
             url, depth = queue.popleft()
-            
-            # De-duplicate: strip trailing slash, hash fragments, and normalize
+
             parsed = urlparse(url)
-            # Remove fragment, normalize path
             path = parsed.path.rstrip("/") or "/"
             clean_url = f"{parsed.scheme}://{parsed.netloc}{path}"
-            # Also strip query params for dedup of same page
-            clean_no_query = f"{parsed.scheme}://{parsed.netloc}{path}"
-            if clean_url in visited or clean_no_query in visited:
-                continue
-                
+
+            if clean_url in visited and pages_crawled > 0:
+                pass
             visited.add(clean_url)
 
-            # Respect robots.txt
             if not self._is_allowed_by_robots(url):
-                logger.warning(f"URL disallowed by robots.txt: {url}")
                 yield url, pages_crawled, None, len(queue)
                 continue
 
-            # Fetch page
             result = self.crawler.fetch_page(url)
             pages_crawled += 1
-            
-            # Yield result for CLI callback/progress bar
             yield url, pages_crawled, result, len(queue)
 
             if not result.is_success:
                 continue
 
-            # Enqueue internal links if depth has not exceeded limit
+            # Extract links from this page
             if depth < self.max_depth:
-                from ai_seo_audit.parser import SEOHTMLParser
-                parser = SEOHTMLParser(html_content=result.html, base_url=result.final_url)
-                
-                for link in parser.get_links():
-                    if link.is_internal:
-                        # Ensure we don't enqueue already visited ones
-                        link_parsed = urlparse(link.url)
-                        link_path = link_parsed.path.rstrip("/") or "/"
-                        link_clean = f"{link_parsed.scheme}://{link_parsed.netloc}{link_path}"
-                        if link_clean not in visited:
-                            queue.append((link.url, depth + 1))
+                discovered = self._extract_links_from_html(result.html, result.final_url)
+                for link_url in discovered:
+                    link_parsed = urlparse(link_url)
+                    link_path = link_parsed.path.rstrip("/") or "/"
+                    link_clean = f"{link_parsed.scheme}://{link_parsed.netloc}{link_path}"
+                    if link_clean not in visited:
+                        visited.add(link_clean)
+                        queue.append((link_url, depth + 1))
