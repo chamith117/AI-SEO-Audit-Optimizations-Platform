@@ -847,43 +847,178 @@ if st.session_state.report:
 
     # 1. OVERVIEW TAB
     with tab_overview:
-        col_gauge, col_stats = st.columns([1.5, 2.5])
-        
+        # === TOP ROW: Score + Site Health ===
+        col_gauge, col_health = st.columns([1.2, 2.8])
+
         with col_gauge:
             st.plotly_chart(draw_gauge(report.score), use_container_width=True)
             st.markdown(f"<h3 style='text-align: center; color: {get_score_color(report.score)}'>{get_score_description(report.score)}</h3>", unsafe_allow_html=True)
-        
-        with col_stats:
-            st.subheader("Key SEO Statistics")
-            sub_col1, sub_col2 = st.columns(2)
-            with sub_col1:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-value">{report.total_pages_crawled}</div>
-                    <div class="metric-label">Pages Crawled</div>
-                </div>
-                """, unsafe_allow_html=True)
-                st.write("")
-                st.markdown(f"""
-                <div class="metric-card" style="border-color: #ef4444;">
-                    <div class="metric-value" style="color: #ef4444;">{critical_count}</div>
-                    <div class="metric-label">Critical Issues</div>
-                </div>
-                """, unsafe_allow_html=True)
-            with sub_col2:
-                st.markdown(f"""
-                <div class="metric-card" style="border-color: #f59e0b;">
-                    <div class="metric-value" style="color: #f59e0b;">{warning_count}</div>
-                    <div class="metric-label">Warnings</div>
-                </div>
-                """, unsafe_allow_html=True)
-                st.write("")
-                st.markdown(f"""
-                <div class="metric-card" style="border-color: #38bdf8;">
-                    <div class="metric-value" style="color: #38bdf8;">{info_count}</div>
-                    <div class="metric-label">Advisory Items</div>
-                </div>
-                """, unsafe_allow_html=True)
+
+        with col_health:
+            st.subheader("Site Health Summary")
+
+            # Health score breakdown
+            health_items = []
+            https_pct = sum(1 for p in report.pages if p.is_https) / max(1, len(report.pages)) * 100
+            health_items.append(("HTTPS Security", https_pct, "green" if https_pct == 100 else ("orange" if https_pct > 50 else "red")))
+            health_items.append(("robots.txt", 100 if report.robots_txt_found else 0, "green" if report.robots_txt_found else "red"))
+            health_items.append(("sitemap.xml", 100 if report.sitemap_xml_found else 0, "green" if report.sitemap_xml_found else "red"))
+
+            # Content health
+            pages_with_title = sum(1 for p in report.pages if p.metadata.title)
+            title_pct = pages_with_title / max(1, len(report.pages)) * 100
+            health_items.append(("Title Tags", title_pct, "green" if title_pct > 90 else ("orange" if title_pct > 50 else "red")))
+
+            pages_with_meta = sum(1 for p in report.pages if p.metadata.meta_description)
+            meta_pct = pages_with_meta / max(1, len(report.pages)) * 100
+            health_items.append(("Meta Descriptions", meta_pct, "green" if meta_pct > 90 else ("orange" if meta_pct > 50 else "red")))
+
+            pages_with_h1 = sum(1 for p in report.pages if p.metadata.headings and any(h.level == 1 for h in p.metadata.headings))
+            h1_pct = pages_with_h1 / max(1, len(report.pages)) * 100
+            health_items.append(("H1 Tags", h1_pct, "green" if h1_pct > 90 else ("orange" if h1_pct > 50 else "red")))
+
+            # Advanced audit health
+            if report.advanced_audit:
+                adv = report.advanced_audit
+                sec_health = max(0, 100 - (adv.total_security_issues * 10))
+                health_items.append(("Security Headers", sec_health, "green" if sec_health > 80 else ("orange" if sec_health > 50 else "red")))
+
+                mixed_health = max(0, 100 - (adv.total_mixed_content * 15))
+                health_items.append(("Mixed Content", mixed_health, "green" if mixed_health > 80 else ("orange" if mixed_health > 50 else "red")))
+
+                thin_health = max(0, 100 - (adv.total_thin_content * 20))
+                health_items.append(("Content Quality", thin_health, "green" if thin_health > 80 else ("orange" if thin_health > 50 else "red")))
+
+            # Render health bars
+            for label, pct, color in health_items:
+                c1, c2, c3 = st.columns([2, 4, 1])
+                with c1:
+                    st.caption(label)
+                with c2:
+                    st.progress(pct / 100)
+                with c3:
+                    st.caption(f"**{pct:.0f}%**")
+
+        st.markdown("---")
+
+        # === ROW 2: Key Metric Cards ===
+        st.subheader("Key Metrics")
+        m1, m2, m3, m4, m5, m6 = st.columns(6)
+        with m1:
+            st.metric("Pages Crawled", report.total_pages_crawled)
+        with m2:
+            st.metric("Total Issues", total_issues)
+        with m3:
+            st.metric("Critical", critical_count, delta=None, delta_color="inverse")
+        with m4:
+            st.metric("Warnings", warning_count, delta=None, delta_color="inverse")
+        with m5:
+            st.metric("Advisory", info_count)
+        with m6:
+            avg_score = sum(p.score for p in report.pages) // max(1, len(report.pages))
+            st.metric("Avg Page Score", f"{avg_score}/100")
+
+        st.markdown("---")
+
+        # === ROW 3: AI Visibility + Security + Content Quality ===
+        st.subheader("Advanced Insights")
+        av_col, sec_col, con_col = st.columns(3)
+
+        with av_col:
+            st.markdown("#### AI Visibility Score")
+            # Calculate average AI visibility from advanced pages
+            ai_scores = []
+            if report.advanced_audit and report.advanced_audit.pages:
+                for ap in report.advanced_audit.pages:
+                    if ap.ai_visibility:
+                        ai_scores.append(ap.ai_visibility.overall_score)
+            if ai_scores:
+                avg_ai = sum(ai_scores) // len(ai_scores)
+                ai_grades = {90: "A+", 80: "A", 70: "B", 60: "C", 50: "D", 0: "F"}
+                grade = "F"
+                for threshold, g in sorted(ai_grades.items(), reverse=True):
+                    if avg_ai >= threshold:
+                        grade = g
+                        break
+                st.metric("Overall AI Score", f"{avg_ai}/100", help="How visible your site is to AI search engines (ChatGPT, Perplexity, Google AI)")
+                st.markdown(f"<h2 style='text-align:center; color:{get_score_color(avg_ai)}'>{grade}</h2>", unsafe_allow_html=True)
+            else:
+                st.info("Run Advanced Audit to see AI Visibility Score")
+
+        with sec_col:
+            st.markdown("#### Security Status")
+            if report.advanced_audit:
+                sec_issues = report.advanced_audit.total_security_issues
+                mixed = report.advanced_audit.total_mixed_content
+                st.metric("Security Issues", sec_issues)
+                st.metric("Mixed Content", mixed)
+                if sec_issues == 0 and mixed == 0:
+                    st.success("All security checks passed")
+                elif sec_issues > 0:
+                    st.warning(f"{sec_issues} security header issues found")
+                if mixed > 0:
+                    st.error(f"{mixed} mixed content (HTTP on HTTPS) detected")
+            else:
+                st.info("Run Advanced Audit to see security data")
+
+        with con_col:
+            st.markdown("#### Content Quality")
+            if report.advanced_audit:
+                adv = report.advanced_audit
+                st.metric("Avg Word Count", f"{adv.avg_word_count:,}")
+                st.metric("Thin Content Pages", adv.total_thin_content)
+                st.metric("Heading Issues", adv.heading_hierarchy_issues)
+                st.metric("Images w/o Lazy Load", adv.total_images_no_lazy)
+                if adv.avg_readability != "N/A":
+                    st.caption(f"Readability: {adv.avg_readability}")
+            else:
+                st.info("Run Advanced Audit to see content data")
+
+        st.markdown("---")
+
+        # === ROW 4: Technical Checklist ===
+        st.subheader("Technical Checklist")
+        tech_col1, tech_col2, tech_col3, tech_col4 = st.columns(4)
+        with tech_col1:
+            st.checkbox("HTTPS", value=all(p.is_https for p in report.pages), disabled=True, key="ov_https")
+            st.checkbox("robots.txt", value=report.robots_txt_found, disabled=True, key="ov_robots")
+        with tech_col2:
+            st.checkbox("sitemap.xml", value=report.sitemap_xml_found, disabled=True, key="ov_sitemap")
+            has_canonical = sum(1 for p in report.pages if any(i.issue_type == "Canonical Tag" for i in p.issues))
+            st.checkbox("Canonical Tags", value=(has_canonical == 0), disabled=True, key="ov_canonical")
+        with tech_col3:
+            has_viewport = sum(1 for p in report.pages if not any(i.issue_type == "Missing Viewport Tag" for i in p.issues))
+            st.checkbox("Viewport Meta", value=(has_viewport > 0), disabled=True, key="ov_viewport")
+            has_lang = sum(1 for p in report.pages if p.metadata.lang)
+            st.checkbox("Lang Attribute", value=(has_lang > 0), disabled=True, key="ov_lang")
+        with tech_col4:
+            has_favicon = sum(1 for p in report.pages if not any(i.issue_type == "Missing Favicon" for i in p.issues))
+            st.checkbox("Favicon", value=(has_favicon > 0), disabled=True, key="ov_favicon")
+            st.checkbox("No Redirect Chains", value=(len(report.redirect_chains) == 0), disabled=True, key="ov_redirects")
+
+        st.markdown("---")
+
+        # === ROW 5: Duplicate & Orphan Pages ===
+        dup_col, orphan_col, redirect_col = st.columns(3)
+        with dup_col:
+            st.metric("Duplicate Title Groups", len(report.duplicate_titles))
+            st.metric("Duplicate Meta Groups", len(report.duplicate_descriptions))
+            st.metric("Duplicate Content Groups", len(report.duplicate_pages))
+        with orphan_col:
+            st.metric("Orphan Pages", len(report.orphan_pages))
+            if report.orphan_pages:
+                with st.expander("View Orphan Pages"):
+                    for op in report.orphan_pages[:10]:
+                        st.write(f"- {op}")
+        with redirect_col:
+            st.metric("Redirect Chains", len(report.redirect_chains))
+            if report.redirect_chains:
+                with st.expander("View Redirect Chains"):
+                    for url, chain in list(report.redirect_chains.items())[:10]:
+                        st.write(f"**{url}**")
+                        st.caption(" → ".join(chain))
+
+        st.markdown("---")
 
         st.markdown("---")
         st.subheader("Download Audit Exports")
