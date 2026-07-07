@@ -57,6 +57,7 @@ class SEOAuditor:
         issues: List[IssueModel] = []
         url = crawl_result.final_url
         is_https = urlparse(url).scheme.lower() == "https"
+        is_js_rendered = metadata.is_js_rendered
 
         # --- Rule 1: HTTPS ---
         if not is_https:
@@ -72,13 +73,15 @@ class SEOAuditor:
 
         # --- Rule 2: Title Tag ---
         if not metadata.title:
+            severity = "WARNING" if is_js_rendered else "CRITICAL"
+            js_note = " (page appears JavaScript-rendered — title may load via JS)" if is_js_rendered else ""
             issues.append(
                 IssueModel(
                     url=url,
-                    severity="CRITICAL",
+                    severity=severity,
                     issue_type="Missing Title",
-                    description="The page is missing a <title> tag.",
-                    recommendation="Create a unique, descriptive <title> tag between 30-65 characters long."
+                    description=f"The page is missing a <title> tag.{js_note}",
+                    recommendation="Create a unique, descriptive <title> tag between 30-65 characters long. For JS-rendered pages, ensure the title is in the initial HTML or use SSR."
                 )
             )
         else:
@@ -99,13 +102,15 @@ class SEOAuditor:
 
         # --- Rule 3: Meta Description ---
         if not metadata.meta_description:
+            severity = "WARNING" if is_js_rendered else "CRITICAL"
+            js_note = " (page appears JavaScript-rendered — description may load via JS)" if is_js_rendered else ""
             issues.append(
                 IssueModel(
                     url=url,
-                    severity="CRITICAL",
+                    severity=severity,
                     issue_type="Missing Meta Description",
-                    description="The page is missing a meta description tag.",
-                    recommendation="Add a <meta name='description'> tag with a concise summary of the page (50-160 characters)."
+                    description=f"The page is missing a meta description tag.{js_note}",
+                    recommendation="Add a <meta name='description'> tag with a concise summary of the page (50-160 characters). For JS-rendered pages, ensure meta tags are in the initial HTML or use SSR."
                 )
             )
         else:
@@ -176,13 +181,15 @@ class SEOAuditor:
         # --- Rule 7: H1 Headings ---
         h1_count = sum(1 for h in metadata.headings if h.level == 1)
         if h1_count == 0:
+            severity = "WARNING" if is_js_rendered else "CRITICAL"
+            js_note = " (page appears JavaScript-rendered — headings may load via JS)" if is_js_rendered else ""
             issues.append(
                 IssueModel(
                     url=url,
-                    severity="CRITICAL",
+                    severity=severity,
                     issue_type="Missing H1 Heading",
-                    description="The page is missing a primary H1 heading tag.",
-                    recommendation="Implement exactly one H1 heading containing the primary subject of the page."
+                    description=f"The page is missing a primary H1 heading tag.{js_note}",
+                    recommendation="Implement exactly one H1 heading containing the primary subject of the page. For JS-rendered pages, ensure headings are in the initial HTML or use SSR."
                 )
             )
         elif h1_count > 1:
@@ -193,6 +200,18 @@ class SEOAuditor:
                     issue_type="Multiple H1 Headings",
                     description=f"Multiple H1 tags ({h1_count}) were detected.",
                     recommendation="Restrict heading structure to a single primary H1 tag, nesting subsections inside H2-H6 tags."
+                )
+            )
+
+        # --- Rule 8: JS-Rendered Page Warning ---
+        if is_js_rendered:
+            issues.append(
+                IssueModel(
+                    url=url,
+                    severity="INFO",
+                    issue_type="JavaScript Rendered Page",
+                    description="This page appears to be a JavaScript-rendered SPA (Single Page Application). Search engines may not see all content. Metadata extracted from OG tags or JS data as fallback.",
+                    recommendation="Use Server-Side Rendering (SSR) or Static Site Generation (SSG) to ensure all SEO metadata is in the initial HTML. For Next.js, use getServerSideProps or getStaticProps."
                 )
             )
 
@@ -273,15 +292,18 @@ class SEOAuditor:
         if not is_https: score -= 10
         if not robots_txt_found: score -= 5
         if not sitemap_xml_found: score -= 5
-        if not metadata.title: score -= 15
+        if not metadata.title:
+            score -= 7 if is_js_rendered else 15  # Less penalty for JS-rendered pages
         elif len(metadata.title) < 30 or len(metadata.title) > 65: score -= 7
-        if not metadata.meta_description: score -= 15
+        if not metadata.meta_description:
+            score -= 7 if is_js_rendered else 15  # Less penalty for JS-rendered pages
         elif len(metadata.meta_description) < 50 or len(metadata.meta_description) > 160: score -= 7
         if not metadata.canonical_url: score -= 10
         elif metadata.canonical_url.rstrip("/") != url.rstrip("/"): score -= 5
         if not metadata.viewport: score -= 10
         if not metadata.lang: score -= 5
-        if h1_count == 0: score -= 10
+        if h1_count == 0:
+            score -= 5 if is_js_rendered else 10  # Less penalty for JS-rendered pages
         elif h1_count > 1: score -= 5
         if missing_og: score -= 3
         if any(not b.valid for b in metadata.json_ld): score -= 5

@@ -64,7 +64,8 @@ class PageMetadataModel(BaseModel):
     favicon_url: Optional[str] = Field(None, description="Discovered favicon target URL")
     viewport: Optional[str] = Field(None, description="The content attribute of viewport tag")
     lang: Optional[str] = Field(None, description="The lang attribute of the HTML tag")
-    
+    is_js_rendered: bool = Field(default=False, description="Whether page appears to be JavaScript-rendered (SPA)")
+
     headings: List[HeadingModel] = Field(default_factory=list, description="List of headings found")
     open_graph: Dict[str, str] = Field(default_factory=dict, description="Parsed Open Graph tags")
     twitter_cards: Dict[str, str] = Field(default_factory=dict, description="Parsed Twitter card tags")
