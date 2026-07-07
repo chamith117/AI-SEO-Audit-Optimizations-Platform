@@ -679,14 +679,26 @@ def export_report_to_pdf(report: WebsiteAuditReport, output_path: Union[str, Pat
 
     # Site info table
     https_pct = sum(1 for p in report.pages if p.is_https) / max(1, len(report.pages)) * 100
+    
+    # Score helper function
+    def get_score_indicator(score_val):
+        if score_val >= 80: return "Excellent"
+        elif score_val >= 60: return "Good"
+        elif score_val >= 40: return "Needs Work"
+        else: return "Poor"
+    
     site_info_data = [
         [Paragraph("<b>Metric</b>", body_style), Paragraph("<b>Value</b>", body_style)],
         [Paragraph("Website URL", body_style), Paragraph(pdf_escape(report.start_url), body_style)],
-        [Paragraph("SEO Score", body_style), Paragraph(f"<b>{score}/100</b>", body_style)],
+        [Paragraph("SEO Score", body_style), Paragraph(f"<b>{score}/100</b> ({get_score_indicator(score)})", body_style)],
+        [Paragraph("AI Visibility Score", body_style), Paragraph(f"<b>{report.ai_visibility_score}/100</b> ({get_score_indicator(report.ai_visibility_score)})", body_style)],
+        [Paragraph("Site Speed Score", body_style), Paragraph(f"<b>{report.site_speed_score}/100</b> ({get_score_indicator(report.site_speed_score)})", body_style)],
+        [Paragraph("Site Health Score", body_style), Paragraph(f"<b>{report.site_health_score}/100</b> ({get_score_indicator(report.site_health_score)})", body_style)],
         [Paragraph("Pages Crawled", body_style), Paragraph(str(report.total_pages_crawled), body_style)],
         [Paragraph("HTTPS Enabled", body_style), Paragraph(f"Yes ({https_pct:.0f}%)" if https_pct == 100 else f"Partial ({https_pct:.0f}%)", body_style)],
         [Paragraph("robots.txt Found", body_style), Paragraph("Yes" if report.robots_txt_found else "No", body_style)],
         [Paragraph("sitemap.xml Found", body_style), Paragraph("Yes" if report.sitemap_xml_found else "No", body_style)],
+        [Paragraph("Avg Response Time", body_style), Paragraph(f"{report.avg_response_time_ms:.0f}ms", body_style)],
     ]
     site_info_table = Table(site_info_data, colWidths=[200, 250])
     site_info_table.setStyle(TableStyle([

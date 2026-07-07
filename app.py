@@ -1107,53 +1107,41 @@ if st.session_state.report:
 
         with av_col:
             st.markdown("#### AI Visibility Score")
-            # Calculate average AI visibility from advanced pages
-            ai_scores = []
-            if report.advanced_audit and report.advanced_audit.pages:
-                for ap in report.advanced_audit.pages:
-                    if ap.ai_visibility:
-                        ai_scores.append(ap.ai_visibility.overall_score)
-            if ai_scores:
-                avg_ai = sum(ai_scores) // len(ai_scores)
-                ai_grades = {90: "A+", 80: "A", 70: "B", 60: "C", 50: "D", 0: "F"}
-                grade = "F"
-                for threshold, g in sorted(ai_grades.items(), reverse=True):
-                    if avg_ai >= threshold:
-                        grade = g
-                        break
-                st.metric("Overall AI Score", f"{avg_ai}/100", help="How visible your site is to AI search engines (ChatGPT, Perplexity, Google AI)")
-                st.markdown(f"<h2 style='text-align:center; color:{get_score_color(avg_ai)}'>{grade}</h2>", unsafe_allow_html=True)
-            else:
-                st.info("Run Advanced Audit to see AI Visibility Score")
+            # Use the new report score
+            avg_ai = report.ai_visibility_score
+            ai_grades = {90: "A+", 80: "A", 70: "B", 60: "C", 50: "D", 0: "F"}
+            grade = "F"
+            for threshold, g in sorted(ai_grades.items(), reverse=True):
+                if avg_ai >= threshold:
+                    grade = g
+                    break
+            st.metric("Overall AI Score", f"{avg_ai}/100", help="How visible your site is to AI search engines (ChatGPT, Perplexity, Google AI)")
+            st.markdown(f"<h2 style='text-align:center; color:{get_score_color(avg_ai)}'>{grade}</h2>", unsafe_allow_html=True)
 
         with sec_col:
-            st.markdown("#### Security Status")
-            if report.advanced_audit:
-                sec_issues = report.advanced_audit.total_security_issues
-                mixed = report.advanced_audit.total_mixed_content
-                st.metric("Security Issues", sec_issues)
-                st.metric("Mixed Content", mixed)
-                if sec_issues == 0 and mixed == 0:
-                    st.success("All security checks passed")
-                elif sec_issues > 0:
-                    st.warning(f"{sec_issues} security header issues found")
-                if mixed > 0:
-                    st.error(f"{mixed} mixed content (HTTP on HTTPS) detected")
-            else:
-                st.info("Run Advanced Audit to see security data")
+            st.markdown("#### Site Speed Score")
+            speed = report.site_speed_score
+            speed_grades = {90: "Fast", 70: "Good", 50: "Average", 30: "Slow", 0: "Very Slow"}
+            speed_grade = "Very Slow"
+            for threshold, g in sorted(speed_grades.items(), reverse=True):
+                if speed >= threshold:
+                    speed_grade = g
+                    break
+            st.metric("Speed Score", f"{speed}/100", help="Page speed performance based on response time, page size, and lazy loading")
+            st.markdown(f"<h2 style='text-align:center; color:{get_score_color(speed)}'>{speed_grade}</h2>", unsafe_allow_html=True)
+            st.caption(f"Avg Response: {report.avg_response_time_ms:.0f}ms")
 
         with con_col:
-            st.markdown("#### Content Quality")
-            if report.advanced_audit:
-                adv = report.advanced_audit
-                st.metric("Avg Word Count", f"{adv.avg_word_count:,}")
-                st.metric("Thin Content Pages", adv.total_thin_content)
-                st.metric("Heading Issues", adv.heading_hierarchy_issues)
-                st.metric("Images w/o Lazy Load", adv.total_images_no_lazy)
-                if adv.avg_readability != "N/A":
-                    st.caption(f"Readability: {adv.avg_readability}")
-            else:
-                st.info("Run Advanced Audit to see content data")
+            st.markdown("#### Site Health Score")
+            health = report.site_health_score
+            health_grades = {90: "Excellent", 70: "Good", 50: "Fair", 30: "Poor", 0: "Critical"}
+            health_grade = "Critical"
+            for threshold, g in sorted(health_grades.items(), reverse=True):
+                if health >= threshold:
+                    health_grade = g
+                    break
+            st.metric("Health Score", f"{health}/100", help="Overall site health combining SEO, AI visibility, speed, and technical factors")
+            st.markdown(f"<h2 style='text-align:center; color:{get_score_color(health)}'>{health_grade}</h2>", unsafe_allow_html=True)
 
         st.markdown("---")
 

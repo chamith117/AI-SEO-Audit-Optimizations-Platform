@@ -703,6 +703,58 @@ class SEOAuditor:
         for p in pages:
             status_dist[p.status_code] = status_dist.get(p.status_code, 0) + 1
 
+        # Calculate AI Visibility Score (based on structured data, schemas, meta tags)
+        ai_score = 100
+        pages_with_jsonld = sum(1 for p in pages if p.metadata.json_ld)
+        jsonld_pct = pages_with_jsonld / max(1, len(pages)) * 100
+        if jsonld_pct < 50: ai_score -= 20
+        elif jsonld_pct < 80: ai_score -= 10
+        
+        pages_with_og = sum(1 for p in pages if p.metadata.open_graph)
+        og_pct = pages_with_og / max(1, len(pages)) * 100
+        if og_pct < 50: ai_score -= 15
+        elif og_pct < 80: ai_score -= 5
+        
+        pages_with_twitter = sum(1 for p in pages if p.metadata.twitter_cards)
+        twitter_pct = pages_with_twitter / max(1, len(pages)) * 100
+        if twitter_pct < 30: ai_score -= 10
+        
+        # Check for FAQ/HowTo schemas (good for AI)
+        has_faq = any("FAQPage" in str(j.type) for p in pages for j in p.metadata.json_ld)
+        has_howto = any("HowTo" in str(j.type) for p in pages for j in p.metadata.json_ld)
+        if not has_faq and not has_howto: ai_score -= 5
+        
+        ai_visibility_score = max(0, min(100, ai_score))
+
+        # Calculate Site Speed Score (based on response time, page size)
+        speed_score = 100
+        avg_response = sum((p.response_metrics.total_response_time or 0) if p.response_metrics else 0 for p in pages) / max(1, len(pages))
+        if avg_response > 3000: speed_score -= 30
+        elif avg_response > 2000: speed_score -= 20
+        elif avg_response > 1000: speed_score -= 10
+        
+        avg_size = sum((p.response_metrics.html_size_bytes or 0) if p.response_metrics else 0 for p in pages) / max(1, len(pages))
+        if avg_size > 2000000: speed_score -= 25
+        elif avg_size > 1000000: speed_score -= 15
+        elif avg_size > 500000: speed_score -= 5
+        
+        # Check for lazy loading
+        pages_with_lazy = sum(1 for p in pages if any("lazy" in (img.loading or "") for img in p.images))
+        lazy_pct = pages_with_lazy / max(1, len(pages)) * 100
+        if lazy_pct < 30: speed_score -= 10
+        
+        site_speed_score = max(0, min(100, speed_score))
+
+        # Calculate Site Health Score (composite of all factors)
+        health_score = (
+            site_score * 0.4 +  # SEO Score
+            ai_visibility_score * 0.2 +  # AI Visibility
+            site_speed_score * 0.2 +  # Speed
+            (100 if robots_txt_found else 0) * 0.1 +  # robots.txt
+            (100 if sitemap_xml_found else 0) * 0.1  # sitemap
+        )
+        site_health_score = max(0, min(100, int(health_score)))
+
         return WebsiteAuditReport(
             start_url=start_url,
             total_pages_crawled=len(pages),
@@ -717,6 +769,9 @@ class SEOAuditor:
             robots_txt_found=robots_txt_found,
             sitemap_xml_found=sitemap_xml_found,
             score=site_score,
+            ai_visibility_score=ai_visibility_score,
+            site_speed_score=site_speed_score,
+            site_health_score=site_health_score,
             status_distribution=status_dist,
             avg_response_time_ms=sum((p.response_metrics.total_response_time or 0) if p.response_metrics else 0 for p in pages) / max(1, len(pages)),
         )
