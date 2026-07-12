@@ -170,9 +170,19 @@ st.sidebar.title("AI SEO Platform")
 st.sidebar.caption("Audit & Optimize Content via OpenRouter AI")
 
 # Load API key from Streamlit secrets or environment variable
-_default_key = st.secrets.get("OPENROUTER_API_KEY", os.environ.get("OPENROUTER_API_KEY", ""))
+_default_key = os.environ.get("OPENROUTER_API_KEY", "")
 if not _default_key:
-    _default_key = st.secrets.get("DEEPSEEK_API_KEY", os.environ.get("DEEPSEEK_API_KEY", ""))
+    try:
+        _default_key = st.secrets.get("OPENROUTER_API_KEY", "")
+    except Exception:
+        pass
+if not _default_key:
+    _default_key = os.environ.get("DEEPSEEK_API_KEY", "")
+if not _default_key:
+    try:
+        _default_key = st.secrets.get("DEEPSEEK_API_KEY", "")
+    except Exception:
+        pass
 
 # Sidebar: API key input
 user_api_key = st.sidebar.text_input(
