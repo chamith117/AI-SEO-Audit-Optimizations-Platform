@@ -1033,7 +1033,11 @@ if st.session_state.report:
 
     # 1. OVERVIEW TAB
     with tab_overview:
-        # === TOP ROW: Score + Site Health ===
+        # ============================================================
+        #  SEMRUSH-STYLE SITE AUDIT OVERVIEW
+        # ============================================================
+
+        # --- ROW 1: Score Gauge + Health Breakdown ---
         col_gauge, col_health = st.columns([1.2, 2.8])
 
         with col_gauge:
@@ -1041,117 +1045,269 @@ if st.session_state.report:
             st.markdown(f"<h3 style='text-align: center; color: {get_score_color(report.score)}'>{get_score_description(report.score)}</h3>", unsafe_allow_html=True)
 
         with col_health:
-            st.subheader("Site Health Summary")
-
-            # Health score breakdown
+            st.markdown("#### Health Breakdown")
             health_items = []
             https_pct = sum(1 for p in report.pages if p.is_https) / max(1, len(report.pages)) * 100
-            health_items.append(("HTTPS Security", https_pct, "green" if https_pct == 100 else ("orange" if https_pct > 50 else "red")))
-            health_items.append(("robots.txt", 100 if report.robots_txt_found else 0, "green" if report.robots_txt_found else "red"))
-            health_items.append(("sitemap.xml", 100 if report.sitemap_xml_found else 0, "green" if report.sitemap_xml_found else "red"))
-
-            # Content health
+            health_items.append(("HTTPS Security", https_pct))
+            health_items.append(("robots.txt", 100 if report.robots_txt_found else 0))
+            health_items.append(("sitemap.xml", 100 if report.sitemap_xml_found else 0))
             pages_with_title = sum(1 for p in report.pages if p.metadata.title)
-            title_pct = pages_with_title / max(1, len(report.pages)) * 100
-            health_items.append(("Title Tags", title_pct, "green" if title_pct > 90 else ("orange" if title_pct > 50 else "red")))
-
+            health_items.append(("Title Tags", pages_with_title / max(1, len(report.pages)) * 100))
             pages_with_meta = sum(1 for p in report.pages if p.metadata.meta_description)
-            meta_pct = pages_with_meta / max(1, len(report.pages)) * 100
-            health_items.append(("Meta Descriptions", meta_pct, "green" if meta_pct > 90 else ("orange" if meta_pct > 50 else "red")))
-
+            health_items.append(("Meta Descriptions", pages_with_meta / max(1, len(report.pages)) * 100))
             pages_with_h1 = sum(1 for p in report.pages if p.metadata.headings and any(h.level == 1 for h in p.metadata.headings))
-            h1_pct = pages_with_h1 / max(1, len(report.pages)) * 100
-            health_items.append(("H1 Tags", h1_pct, "green" if h1_pct > 90 else ("orange" if h1_pct > 50 else "red")))
-
-            # Advanced audit health
+            health_items.append(("H1 Tags", pages_with_h1 / max(1, len(report.pages)) * 100))
             if report.advanced_audit:
                 adv = report.advanced_audit
-                sec_health = max(0, 100 - (adv.total_security_issues * 10))
-                health_items.append(("Security Headers", sec_health, "green" if sec_health > 80 else ("orange" if sec_health > 50 else "red")))
-
-                mixed_health = max(0, 100 - (adv.total_mixed_content * 15))
-                health_items.append(("Mixed Content", mixed_health, "green" if mixed_health > 80 else ("orange" if mixed_health > 50 else "red")))
-
-                thin_health = max(0, 100 - (adv.total_thin_content * 20))
-                health_items.append(("Content Quality", thin_health, "green" if thin_health > 80 else ("orange" if thin_health > 50 else "red")))
-
-            # Render health bars
-            for label, pct, color in health_items:
+                health_items.append(("Security Headers", max(0, 100 - adv.total_security_issues * 10)))
+                health_items.append(("Content Quality", max(0, 100 - adv.total_thin_content * 20)))
+            for label, pct in health_items:
                 c1, c2, c3 = st.columns([2, 4, 1])
-                with c1:
-                    st.caption(label)
-                with c2:
-                    st.progress(pct / 100)
-                with c3:
-                    st.caption(f"**{pct:.0f}%**")
+                with c1: st.caption(label)
+                with c2: st.progress(pct / 100)
+                with c3: st.caption(f"**{pct:.0f}%**")
 
         st.markdown("---")
 
-        # === ROW 2: Key Metric Cards ===
-        st.subheader("Key Metrics")
-        m1, m2, m3, m4, m5, m6 = st.columns(6)
-        with m1:
+        # --- ROW 2: Semrush-style Issue Summary Cards ---
+        st.markdown("#### Errors, Warnings, and Notices")
+
+        # Collect issues
+        all_page_issues = [i for p in report.pages for i in p.issues]
+        all_issues = all_page_issues + report.site_issues
+        critical_issues = [i for i in all_issues if i.severity == "CRITICAL"]
+        warning_issues = [i for i in all_issues if i.severity == "WARNING"]
+        info_issues = [i for i in all_issues if i.severity == "INFO"]
+
+        iss_col1, iss_col2, iss_col3, iss_col4 = st.columns(4)
+        with iss_col1:
+            st.metric("Total Issues", len(all_issues))
+        with iss_col2:
+            st.metric("Errors", len(critical_issues), delta=None, delta_color="inverse")
+        with iss_col3:
+            st.metric("Warnings", len(warning_issues), delta=None, delta_color="inverse")
+        with iss_col4:
+            st.metric("Notices", len(info_issues))
+
+        st.markdown("---")
+
+        # --- ROW 3: Top Issues Table + HTTP Status Chart ---
+        col_issues, col_status = st.columns([2.5, 1.5])
+
+        with col_issues:
+            st.markdown("#### Top Issues")
+            # Group issues by type and count affected pages
+            issue_groups = {}
+            for i in all_issues:
+                key = (i.severity, i.issue_type)
+                if key not in issue_groups:
+                    issue_groups[key] = {"count": 0, "pages": set(), "recommendation": i.recommendation}
+                issue_groups[key]["count"] += 1
+                issue_groups[key]["pages"].add(i.url)
+
+            # Sort by severity then count
+            severity_order = {"CRITICAL": 0, "WARNING": 1, "INFO": 2}
+            sorted_groups = sorted(
+                issue_groups.items(),
+                key=lambda x: (severity_order.get(x[0][0], 3), -x[1]["count"])
+            )
+
+            if sorted_groups:
+                issue_data = []
+                for (sev, itype), data in sorted_groups[:15]:
+                    severity_icon = {"CRITICAL": "🔴", "WARNING": "🟡", "INFO": "🔵"}.get(sev, "⚪")
+                    issue_data.append({
+                        "Severity": f"{severity_icon} {sev}",
+                        "Issue": itype,
+                        "Pages": len(data["pages"]),
+                        "Recommendation": data["recommendation"][:80] + "..." if len(data["recommendation"]) > 80 else data["recommendation"],
+                    })
+                df_issues = pd.DataFrame(issue_data)
+                st.dataframe(df_issues, use_container_width=True, height=420, hide_index=True)
+            else:
+                st.success("No issues found!")
+
+        with col_status:
+            st.markdown("#### HTTP Status Codes")
+            status_dist = {}
+            for p in report.pages:
+                code = p.status_code
+                bucket = f"{code // 100}xx"
+                status_dist[bucket] = status_dist.get(bucket, 0) + 1
+
+            if status_dist:
+                colors = {"2xx": "#22c55e", "3xx": "#f59e0b", "4xx": "#ef4444", "5xx": "#dc2626", "0xx": "#6b7280"}
+                fig_status = go.Figure(data=[go.Pie(
+                    labels=list(status_dist.keys()),
+                    values=list(status_dist.values()),
+                    hole=0.45,
+                    marker=dict(colors=[colors.get(k, "#6b7280") for k in status_dist.keys()]),
+                    textinfo="label+value",
+                    textfont=dict(size=13),
+                )])
+                fig_status.update_layout(
+                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                    font=dict(color="#f1f5f9"), height=300, showlegend=False,
+                    margin=dict(l=10, r=10, t=10, b=10),
+                )
+                st.plotly_chart(fig_status, use_container_width=True)
+
+            # Pages summary
             st.metric("Pages Crawled", report.total_pages_crawled)
-        with m2:
-            st.metric("Total Issues", total_issues)
-        with m3:
-            st.metric("Critical", critical_count, delta=None, delta_color="inverse")
-        with m4:
-            st.metric("Warnings", warning_count, delta=None, delta_color="inverse")
-        with m5:
-            st.metric("Advisory", info_count)
-        with m6:
-            avg_score = sum(p.score for p in report.pages) // max(1, len(report.pages))
-            st.metric("Avg Page Score", f"{avg_score}/100")
+            st.metric("Avg Page Score", f"{sum(p.score for p in report.pages) // max(1, len(report.pages))}/100")
 
         st.markdown("---")
 
-        # === ROW 3: AI Visibility + Security + Content Quality ===
-        st.subheader("Advanced Insights")
-        av_col, sec_col, con_col = st.columns(3)
+        # --- ROW 4: Crawl Depth + Internal Links ---
+        col_depth, col_links = st.columns(2)
 
-        with av_col:
-            st.markdown("#### AI Visibility Score")
-            # Use the new report score
-            avg_ai = report.ai_visibility_score
-            ai_grades = {90: "A+", 80: "A", 70: "B", 60: "C", 50: "D", 0: "F"}
-            grade = "F"
-            for threshold, g in sorted(ai_grades.items(), reverse=True):
-                if avg_ai >= threshold:
-                    grade = g
-                    break
-            st.metric("Overall AI Score", f"{avg_ai}/100", help="How visible your site is to AI search engines (ChatGPT, Perplexity, Google AI)")
-            st.markdown(f"<h2 style='text-align:center; color:{get_score_color(avg_ai)}'>{grade}</h2>", unsafe_allow_html=True)
+        with col_depth:
+            st.markdown("#### Crawl Depth Distribution")
+            depth_dist = {}
+            for p in report.pages:
+                d = p.crawl_depth
+                depth_dist[d] = depth_dist.get(d, 0) + 1
+            if depth_dist:
+                depths = sorted(depth_dist.keys())
+                fig_depth = go.Figure(data=[go.Bar(
+                    x=[f"Depth {d}" for d in depths],
+                    y=[depth_dist[d] for d in depths],
+                    marker_color="#6366f1",
+                    text=[depth_dist[d] for d in depths],
+                    textposition="auto",
+                )])
+                fig_depth.update_layout(
+                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                    font=dict(color="#f1f5f9"), height=250,
+                    xaxis=dict(title="Crawl Depth", gridcolor="rgba(148,163,184,0.1)"),
+                    yaxis=dict(title="Pages", gridcolor="rgba(148,163,184,0.1)"),
+                    margin=dict(l=10, r=10, t=10, b=10),
+                )
+                st.plotly_chart(fig_depth, use_container_width=True)
 
-        with sec_col:
-            st.markdown("#### Site Speed Score")
-            speed = report.site_speed_score
-            speed_grades = {90: "Fast", 70: "Good", 50: "Average", 30: "Slow", 0: "Very Slow"}
-            speed_grade = "Very Slow"
-            for threshold, g in sorted(speed_grades.items(), reverse=True):
-                if speed >= threshold:
-                    speed_grade = g
-                    break
-            st.metric("Speed Score", f"{speed}/100", help="Page speed performance based on response time, page size, and lazy loading")
-            st.markdown(f"<h2 style='text-align:center; color:{get_score_color(speed)}'>{speed_grade}</h2>", unsafe_allow_html=True)
-            st.caption(f"Avg Response: {report.avg_response_time_ms:.0f}ms")
+        with col_links:
+            st.markdown("#### Internal Linking Overview")
+            total_internal = 0
+            total_external = 0
+            pages_with_links = 0
+            for p in report.pages:
+                int_count = sum(1 for l in p.links if l.is_internal)
+                ext_count = len(p.links) - int_count
+                total_internal += int_count
+                total_external += ext_count
+                if int_count > 0:
+                    pages_with_links += 1
 
-        with con_col:
-            st.markdown("#### Site Health Score")
-            health = report.site_health_score
-            health_grades = {90: "Excellent", 70: "Good", 50: "Fair", 30: "Poor", 0: "Critical"}
-            health_grade = "Critical"
-            for threshold, g in sorted(health_grades.items(), reverse=True):
-                if health >= threshold:
-                    health_grade = g
-                    break
-            st.metric("Health Score", f"{health}/100", help="Overall site health combining SEO, AI visibility, speed, and technical factors")
-            st.markdown(f"<h2 style='text-align:center; color:{get_score_color(health)}'>{health_grade}</h2>", unsafe_allow_html=True)
+            lnk1, lnk2 = st.columns(2)
+            with lnk1:
+                st.metric("Total Internal Links", f"{total_internal:,}")
+                st.metric("Avg per Page", f"{total_internal // max(1, len(report.pages))}")
+            with lnk2:
+                st.metric("Total External Links", f"{total_external:,}")
+                st.metric("Pages with Links", f"{pages_with_links}/{len(report.pages)}")
+
+            # Links per page bar chart
+            links_per_page = {}
+            for p in report.pages:
+                int_count = sum(1 for l in p.links if l.is_internal)
+                bucket = min(int_count, 20)
+                label = f"{bucket}+" if bucket == 20 else str(bucket)
+                links_per_page[label] = links_per_page.get(label, 0) + 1
+            if links_per_page:
+                sorted_labels = sorted(links_per_page.keys(), key=lambda x: int(x.replace("+", "0")))
+                fig_links = go.Figure(data=[go.Bar(
+                    x=sorted_labels,
+                    y=[links_per_page[l] for l in sorted_labels],
+                    marker_color="#10b981",
+                    text=[links_per_page[l] for l in sorted_labels],
+                    textposition="auto",
+                )])
+                fig_links.update_layout(
+                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                    font=dict(color="#f1f5f9"), height=200,
+                    xaxis=dict(title="Internal Links per Page", gridcolor="rgba(148,163,184,0.1)"),
+                    yaxis=dict(title="Pages", gridcolor="rgba(148,163,184,0.1)"),
+                    margin=dict(l=10, r=10, t=10, b=10),
+                )
+                st.plotly_chart(fig_links, use_container_width=True)
 
         st.markdown("---")
 
-        # === ROW 4: Technical Checklist ===
-        st.subheader("Technical Checklist")
+        # --- ROW 5: Section Health Cards (Semrush-style) ---
+        st.markdown("#### Audit Sections")
+
+        # Calculate section scores
+        def calc_section_score(issues, section_name):
+            section_issues = [i for i in issues if section_name.lower() in i.issue_type.lower()
+                              or any(kw in i.issue_type.lower() for kw in section_name.lower().split())]
+            crit = sum(1 for i in section_issues if i.severity == "CRITICAL")
+            warn = sum(1 for i in section_issues if i.severity == "WARNING")
+            score = max(0, 100 - crit * 15 - warn * 5)
+            return score, crit, warn
+
+        sections_data = []
+        section_checks = [
+            ("Crawlability", ["robots", "sitemap", "redirect", "crawl"]),
+            ("Indexability", ["canonical", "noindex", "index", "meta robots"]),
+            ("On-Page SEO", ["title", "meta description", "h1", "heading", "content"]),
+            ("Links", ["link", "anchor", "nofollow"]),
+            ("Images", ["image", "alt", "lazy"]),
+            ("Structured Data", ["schema", "json-ld", "jsonld"]),
+            ("Security", ["security", "https", "mixed content", "header"]),
+            ("Performance", ["response", "size", "speed", "time"]),
+        ]
+        for sec_name, keywords in section_checks:
+            sec_issues = []
+            for i in all_issues:
+                it_lower = i.issue_type.lower()
+                if any(kw in it_lower for kw in keywords):
+                    sec_issues.append(i)
+            sec_crit = sum(1 for i in sec_issues if i.severity == "CRITICAL")
+            sec_warn = sum(1 for i in sec_issues if i.severity == "WARNING")
+            sec_score = max(0, 100 - sec_crit * 15 - sec_warn * 5)
+            sections_data.append((sec_name, sec_score, sec_crit, sec_warn, len(sec_issues)))
+
+        sec_cols = st.columns(4)
+        for idx, (name, score, crit, warn, total) in enumerate(sections_data):
+            with sec_cols[idx % 4]:
+                color = "#22c55e" if score >= 80 else ("#f59e0b" if score >= 50 else "#ef4444")
+                st.markdown(f"""
+                <div style="border:1px solid #334155; border-radius:10px; padding:12px; text-align:center; margin-bottom:8px;">
+                    <div style="font-size:13px; color:#94a3b8; margin-bottom:4px;">{name}</div>
+                    <div style="font-size:28px; font-weight:bold; color:{color};">{score}</div>
+                    <div style="font-size:11px; color:#64748b;">🔴 {crit} &nbsp; 🟡 {warn}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # --- ROW 6: Duplicates + Orphans + Redirects ---
+        dup_col, orphan_col, redirect_col = st.columns(3)
+        with dup_col:
+            st.markdown("#### Duplicate Content")
+            st.metric("Duplicate Title Groups", len(report.duplicate_titles))
+            st.metric("Duplicate Meta Groups", len(report.duplicate_descriptions))
+            st.metric("Duplicate Content Groups", len(report.duplicate_pages))
+        with orphan_col:
+            st.markdown("#### Orphan Pages")
+            st.metric("Orphan Pages", len(report.orphan_pages))
+            if report.orphan_pages:
+                with st.expander("View Orphan Pages"):
+                    for op in report.orphan_pages[:10]:
+                        st.write(f"- {op}")
+        with redirect_col:
+            st.markdown("#### Redirect Chains")
+            st.metric("Redirect Chains", len(report.redirect_chains))
+            if report.redirect_chains:
+                with st.expander("View Redirect Chains"):
+                    for url, chain in list(report.redirect_chains.items())[:10]:
+                        st.write(f"**{url}**")
+                        st.caption(" → ".join(chain))
+
+        st.markdown("---")
+
+        # --- ROW 7: Technical Checklist ---
+        st.markdown("#### Technical Checklist")
         tech_col1, tech_col2, tech_col3, tech_col4 = st.columns(4)
         with tech_col1:
             st.checkbox("HTTPS", value=all(p.is_https for p in report.pages), disabled=True, key="ov_https")
@@ -1169,30 +1325,6 @@ if st.session_state.report:
             has_favicon = sum(1 for p in report.pages if not any(i.issue_type == "Missing Favicon" for i in p.issues))
             st.checkbox("Favicon", value=(has_favicon > 0), disabled=True, key="ov_favicon")
             st.checkbox("No Redirect Chains", value=(len(report.redirect_chains) == 0), disabled=True, key="ov_redirects")
-
-        st.markdown("---")
-
-        # === ROW 5: Duplicate & Orphan Pages ===
-        dup_col, orphan_col, redirect_col = st.columns(3)
-        with dup_col:
-            st.metric("Duplicate Title Groups", len(report.duplicate_titles))
-            st.metric("Duplicate Meta Groups", len(report.duplicate_descriptions))
-            st.metric("Duplicate Content Groups", len(report.duplicate_pages))
-        with orphan_col:
-            st.metric("Orphan Pages", len(report.orphan_pages))
-            if report.orphan_pages:
-                with st.expander("View Orphan Pages"):
-                    for op in report.orphan_pages[:10]:
-                        st.write(f"- {op}")
-        with redirect_col:
-            st.metric("Redirect Chains", len(report.redirect_chains))
-            if report.redirect_chains:
-                with st.expander("View Redirect Chains"):
-                    for url, chain in list(report.redirect_chains.items())[:10]:
-                        st.write(f"**{url}**")
-                        st.caption(" → ".join(chain))
-
-        st.markdown("---")
 
         st.markdown("---")
         st.subheader("Download Audit Exports")
