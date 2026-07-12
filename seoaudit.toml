@@ -7,6 +7,7 @@ user_agent = "AI-SEO-Audit-Toolkit/1.0"
 timeout = 10
 max_size = 5242880       # 5 MB
 verify_ssl = true
+js_render = false        # Set true to use Playwright for SPA/CSR pages
 
 [audit]
 check_links = true

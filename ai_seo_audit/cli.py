@@ -52,6 +52,12 @@ def audit(
         "-c",
         help="Enable link health checks."
     ),
+    js_render: bool = typer.Option(
+        False,
+        "--js-render",
+        "-j",
+        help="Use Playwright to render JavaScript (for SPA/CSR pages)."
+    ),
     verbose: bool = typer.Option(
         False,
         "--verbose",
@@ -67,8 +73,9 @@ def audit(
         raise typer.Exit(code=1)
 
     console.print(f"[bold cyan]Crawl:[/bold cyan] Fetching single page HTML from {url}...")
-    crawler = SafeCrawler()
+    crawler = SafeCrawler(js_render=js_render)
     crawl_result = crawler.fetch_page(url)
+    crawler.close()
 
     if not crawl_result.is_success:
         console.print(f"[bold red]Crawl Failed:[/bold red] {crawl_result.error_message}", style="red")
@@ -130,6 +137,12 @@ def crawl(
         "--max-depth",
         help="Override crawl depth limit."
     ),
+    js_render: bool = typer.Option(
+        False,
+        "--js-render",
+        "-j",
+        help="Use Playwright to render JavaScript (for SPA/CSR pages)."
+    ),
     output_dir: Optional[str] = typer.Option(
         None,
         "--output-dir",
@@ -156,6 +169,7 @@ def crawl(
     # CLI Overrides
     crawl_max_pages = max_pages if max_pages is not None else cfg.crawl.max_pages
     crawl_max_depth = max_depth if max_depth is not None else cfg.crawl.max_depth
+    use_js_render = js_render or cfg.crawl.js_render
 
     # 2. Check sitemap.xml on domain
     parsed_start = urlparse(url)
@@ -182,7 +196,8 @@ def crawl(
         timeout=cfg.crawl.timeout,
         max_size_bytes=cfg.crawl.max_size,
         user_agent=cfg.crawl.user_agent,
-        verify_ssl=cfg.crawl.verify_ssl
+        verify_ssl=cfg.crawl.verify_ssl,
+        js_render=use_js_render,
     )
     site_crawler = SiteCrawler(
         crawler=safe_crawler,

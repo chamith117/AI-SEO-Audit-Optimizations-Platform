@@ -146,11 +146,14 @@ class SafeCrawler:
         timeout: int = 15,
         max_size_bytes: int = 10 * 1024 * 1024,
         user_agent: Optional[str] = None,
-        verify_ssl: bool = False
+        verify_ssl: bool = False,
+        js_render: bool = False,
     ):
         self.timeout = timeout
         self.max_size_bytes = max_size_bytes
         self.verify_ssl = verify_ssl
+        self.js_render = js_render
+        self._js_renderer = None
 
         # Build a session with retry logic
         self.session = requests.Session()
@@ -163,6 +166,26 @@ class SafeCrawler:
         self.session.headers.update(DEFAULT_HEADERS)
         if user_agent:
             self.session.headers["User-Agent"] = user_agent
+
+    def _get_js_renderer(self):
+        """Lazy-init the JS renderer."""
+        if self._js_renderer is None:
+            from ai_seo_audit.js_renderer import JSRenderer, is_playwright_available
+            if not is_playwright_available():
+                logger.warning("Playwright not installed. Run: pip install playwright && playwright install chromium")
+                self.js_render = False
+                return None
+            self._js_renderer = JSRenderer(
+                timeout=self.timeout,
+                user_agent=self.session.headers.get("User-Agent"),
+            )
+        return self._js_renderer
+
+    def close(self):
+        """Clean up resources."""
+        if self._js_renderer:
+            self._js_renderer.close()
+            self._js_renderer = None
 
     def fetch_page(self, url: str) -> CrawlResult:
         """Safely retrieves HTML contents of a URL, collecting redirect histories and timing metrics."""
@@ -251,7 +274,7 @@ class SafeCrawler:
             total_time = (time.time() - start_time) * 1000
             compressed_size = len(body_bytes)
 
-            return CrawlResult(
+            result = CrawlResult(
                 url=url,
                 html=html,
                 status_code=status_code,
@@ -264,6 +287,12 @@ class SafeCrawler:
                 html_size_bytes=len(html.encode("utf-8", errors="replace")),
                 compressed_size=compressed_size,
             )
+
+            # If JS rendering is enabled, try to re-render SPA pages
+            if self.js_render and result.is_success:
+                result = self._try_js_render(url, result)
+
+            return result
 
         except Timeout:
             if url.startswith("https://") and self.verify_ssl:
@@ -363,6 +392,59 @@ class SafeCrawler:
         except Exception as err:
             total_time = (time.time() - start_time) * 1000
             return CrawlResult(url=url, error_message=f"Unexpected error: {err}", total_response_time=total_time)
+
+    def _try_js_render(self, url: str, original_result: CrawlResult) -> CrawlResult:
+        """Attempt to re-fetch a page using Playwright JS renderer.
+
+        Used when the normal HTTP fetch returned an empty or shell-only page
+        (common with React/Vue/Angular SPAs).
+        """
+        if not self.js_render:
+            return original_result
+
+        renderer = self._get_js_renderer()
+        if renderer is None:
+            return original_result
+
+        # Check if page looks like a SPA shell
+        html = original_result.html
+        is_spa_shell = (
+            not html
+            or len(html) < 2000
+            or '<div id="root">' in html
+            or '<div id="app">' in html
+            or '<div id="__next">' in html
+            or '__NEXT_DATA__' in html
+            or '__NUXT__' in html
+        )
+
+        if not is_spa_shell and original_result.is_success:
+            return original_result
+
+        logger.info(f"Attempting JS render for {url} (SPA shell detected)")
+        start = time.time()
+        rendered = renderer.render(url)
+        elapsed = (time.time() - start) * 1000
+
+        if rendered and len(rendered) > len(html or ""):
+            logger.info(f"JS render succeeded for {url}: {len(html or '')} -> {len(rendered)} bytes ({elapsed:.0f}ms)")
+            return CrawlResult(
+                url=url,
+                html=rendered,
+                status_code=original_result.status_code,
+                headers=original_result.headers,
+                final_url=original_result.final_url,
+                redirect_history=original_result.redirect_history,
+                redirect_status_codes=original_result.redirect_status_codes,
+                time_to_first_byte=original_result.time_to_first_byte,
+                total_response_time=original_result.total_response_time,
+                html_size_bytes=len(rendered.encode("utf-8", errors="replace")),
+                compressed_size=original_result.compressed_size,
+                crawl_depth=original_result.crawl_depth,
+            )
+
+        logger.debug(f"JS render did not improve {url}, keeping original")
+        return original_result
 
 
 class SiteCrawler:
@@ -588,3 +670,10 @@ class SiteCrawler:
                     if link_clean not in visited:
                         visited.add(link_clean)
                         queue.append((link_url, depth + 1))
+
+        # Clean up JS renderer when crawl finishes
+        self.crawler.close()
+
+    def close(self):
+        """Clean up resources."""
+        self.crawler.close()

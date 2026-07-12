@@ -17,6 +17,7 @@ class CrawlConfig(BaseModel):
     timeout: int = Field(10, ge=1, description="Connection and read timeout in seconds")
     max_size: int = Field(5242880, ge=0, description="Maximum file size in bytes to download")
     verify_ssl: bool = Field(True, description="Verify SSL certs")
+    js_render: bool = Field(False, description="Use Playwright to render JavaScript (SPA/CSR pages)")
 
 
 class AuditConfig(BaseModel):

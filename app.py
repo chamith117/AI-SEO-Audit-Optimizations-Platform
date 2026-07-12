@@ -221,6 +221,11 @@ max_pages = st.sidebar.number_input("Max Pages", min_value=1, max_value=5000, va
 max_depth = st.sidebar.number_input("Max Depth", min_value=1, max_value=10, value=3)
 check_links = st.sidebar.checkbox("Validate Broken Links", value=True)
 check_images = st.sidebar.checkbox("Validate Broken Images", value=True)
+js_render = st.sidebar.checkbox(
+    "JS Render (Playwright)",
+    value=False,
+    help="Use headless Chromium to render JavaScript pages. Required for React/Vue/Angular SPAs. Requires: pip install playwright && playwright install chromium"
+)
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Tools")
@@ -432,7 +437,7 @@ if app_mode == "Keyword Research":
             else:
                 with st.spinner(f"Fetching and analyzing: {kw_url_input}"):
                     try:
-                        fetch_crawler = SafeCrawler(verify_ssl=False)
+                        fetch_crawler = SafeCrawler(verify_ssl=False, js_render=js_render)
                         crawl_result = fetch_crawler.fetch_page(kw_url_input.strip())
 
                         if crawl_result and crawl_result.is_success:
@@ -687,7 +692,7 @@ if run_btn:
             pass
 
         # Setup crawler
-        safe_crawler = SafeCrawler(verify_ssl=False)
+        safe_crawler = SafeCrawler(verify_ssl=False, js_render=js_render)
         site_crawler = SiteCrawler(
             crawler=safe_crawler,
             max_pages=max_pages,
@@ -2510,7 +2515,7 @@ if st.session_state.report:
             with st.spinner(f"Fetching and analyzing keywords from: {kw_url_input}"):
                 try:
                     # Fetch the page
-                    fetch_crawler = SafeCrawler(verify_ssl=False)
+                    fetch_crawler = SafeCrawler(verify_ssl=False, js_render=js_render)
                     crawl_result = fetch_crawler.fetch_page(kw_url_input.strip())
 
                     if crawl_result and crawl_result.is_success:
